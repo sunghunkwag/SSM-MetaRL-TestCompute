@@ -1,9 +1,7 @@
 # SSM-MetaRL-TestCompute
-
 This repository implements a minimal SSM (State Space Model) architecture integrated with meta-reinforcement learning and test-time compute for weight adaptation.
 
 ## Overview
-
 This project combines three key concepts:
 
 ### State Space Models (SSM)
@@ -16,16 +14,39 @@ Meta-RL enables agents to learn how to learn across multiple tasks. This impleme
 Test-time compute refers to the ability to perform additional computation during inference to adapt model weights online. This allows the model to fine-tune its parameters based on test-time observations, improving performance on new or shifted distributions.
 
 ## Architecture
-
 The system consists of:
 - **SSM Core**: Minimal state space model for sequence encoding
 - **Meta-Learning Loop**: Outer loop for meta-training across task distributions
 - **Test-Time Adaptation**: Online weight updates during inference using gradient-based adaptation
 
+## Core SSM Module
+The `core/` directory contains the foundational State Space Model implementation:
+
+### `core/ssm.py`
+A full-featured State Space Model class that implements:
+- **Linear state transition dynamics**: Follows standard SSM formulation with learnable matrices A, B, C, D
+- **Recurrent cell processing**: Maintains hidden state across sequence steps
+- **Observation and output modules**: Transforms inputs to outputs through state space
+- **Model persistence**: Save and load methods for model checkpoints
+- **Comprehensive test suite**: Standalone tests for all functionality
+
+#### Testing the Core Module
+To run the SSM module tests:
+```bash
+python core/ssm.py
+```
+
+This will execute all test cases including:
+- Basic initialization and forward pass
+- Sequence processing capabilities
+- State persistence and reset functionality
+- Model save/load operations
+- Parameter access and modification
+
+The module is written entirely in English with clear educational comments for learning and extension.
+
 ## Usage
-
 This is an experimental implementation, not production-ready code. To run the minimal example:
-
 ```bash
 # Clone the repository
 git clone https://github.com/sunghunkwag/SSM-MetaRL-TestCompute.git
@@ -48,11 +69,3 @@ The code provides:
 - Detailed comments explaining where full logic would be implemented
 
 This is designed for educational and experimental purposes to understand the integration of these three concepts.
-
-## Project Status
-
-**Experimental**: This is a minimal proof-of-concept implementation. Full training loops, optimization, and hyperparameter tuning are left as exercises or future work.
-
-## License
-
-MIT License - Feel free to use and modify for research and educational purposes.
