@@ -1,299 +1,289 @@
+#!/usr/bin/env python3
 """
-main.py - Minimal SSM + Meta-RL skeleton with test-time compute hooks
+Unified Main Pipeline for SSM-MetaRL-TestCompute
 
-This script provides a compact, educational example that demonstrates:
-- A minimal State Space Model (SSM) with linear state transitions
-- A meta-RL training loop skeleton (MAML-like) with clear placeholders
-- Test-time compute hooks for online adaptation of parameters at inference
+Orchestrates the end-to-end pipeline by integrating:
+- core/ssm.py (SSM policy)
+- meta_rl/meta_maml.py (Meta-RL training)
+- env_runner/environment.py (environment batching)
+- adaptation/test_time_adaptation.py (test-time adaptation)
 
-Note: This is an experimental, didactic sample. It is not production-ready.
-All functions are heavily commented for clarity.
+Usage:
+  python main.py train --config basic --outer-steps 100
+  python main.py eval --checkpoint checkpoints/latest.npz --episodes 20
+  python main.py adapt --checkpoint checkpoints/latest.npz --adapt-steps 10
 """
 
-from __future__ import annotations
-from dataclasses import dataclass
-from typing import Tuple, Dict, Any, Iterable
+import argparse
+import json
+import os
+import sys
+import time
+from dataclasses import dataclass, asdict, field
+from typing import Dict, Any
 import numpy as np
 
-# Optional: If extending with PyTorch
+# Import all repo modules
 try:
-    import torch
-    from torch import nn, optim
-    TORCH_AVAILABLE = True
-except Exception:
-    TORCH_AVAILABLE = False
+    from core.ssm import SSM, SSMConfig
+    from meta_rl.meta_maml import MetaLearner, MetaConfig
+    from env_runner.environment import EnvBatch, EnvConfig
+    from adaptation.test_time_adaptation import TestTimeAdapter, AdaptConfig
+except ImportError as e:
+    print(f"Error importing modules: {e}")
+    print("Ensure all modules exist: core/ssm.py, meta_rl/meta_maml.py, env_runner/environment.py, adaptation/test_time_adaptation.py")
+    sys.exit(1)
 
 
-# =============================
-# Minimal State Space Model (SSM)
-# =============================
+# Experiment configuration
 @dataclass
-class SSMConfig:
-    state_dim: int = 8
-    input_dim: int = 4
-    output_dim: int = 2
-    dt: float = 1.0  # discrete time step
+class ExperimentConfig:
+    """Top-level configuration for experiments"""
+    seed: int = 0
+    env_name: str = "MetaGymToy-v0"
+    num_envs: int = 8
+    time_limit: int = 200
+    ssm: SSMConfig = field(default_factory=SSMConfig)
+    meta: MetaConfig = field(default_factory=MetaConfig)
+    adapt: AdaptConfig = field(default_factory=AdaptConfig)
+    log_dir: str = "runs"
+    ckpt_dir: str = "checkpoints"
 
 
-class MinimalSSM:
-    """
-    Minimal linear state-space model:
-      x_{t+1} = A x_t + B u_t
-      y_t     = C x_t
-    where x is the latent state, u is the input/observation, and y is the output.
-    """
-
-    def __init__(self, cfg: SSMConfig, seed: int = 0):
-        rng = np.random.default_rng(seed)
-        self.cfg = cfg
-        # Randomly initialize small weights for A, B, C
-        self.A = 0.1 * rng.standard_normal((cfg.state_dim, cfg.state_dim))
-        self.B = 0.1 * rng.standard_normal((cfg.state_dim, cfg.input_dim))
-        self.C = 0.1 * rng.standard_normal((cfg.output_dim, cfg.state_dim))
-        # Initialize hidden state
-        self.h = np.zeros((cfg.state_dim,), dtype=np.float32)
-
-    def reset_state(self):
-        self.h[:] = 0.0
-
-    def step(self, u_t: np.ndarray) -> np.ndarray:
-        """
-        Advance state and produce output.
-        u_t: shape [input_dim]
-        Returns y_t: shape [output_dim]
-        """
-        # State transition
-        self.h = self.A @ self.h + self.B @ u_t
-        # Output mapping
-        y = self.C @ self.h
-        return y
-
-    def parameters(self) -> Dict[str, np.ndarray]:
-        """Return a dict of model parameters for convenience."""
-        return {"A": self.A, "B": self.B, "C": self.C}
-
-    def set_parameters(self, params: Dict[str, np.ndarray]):
-        """Set parameters from a dict (used for adaptation)."""
-        self.A = params["A"]
-        self.B = params["B"]
-        self.C = params["C"]
+# Built-in example configs
+EXAMPLE_CONFIGS = {
+    "basic": ExperimentConfig(
+        seed=42,
+        env_name="MetaGymToy-v0",
+        num_envs=8,
+        time_limit=200,
+        meta=MetaConfig(outer_steps=50, tasks_per_batch=8, inner_steps=1, inner_lr=1e-2),
+        adapt=AdaptConfig(steps=5, lr=1e-2),
+    ),
+}
 
 
-# =====================================
-# Synthetic Task and Loss (Toy Example)
-# =====================================
-
-def toy_task_generator(num_tasks: int, cfg: SSMConfig, seed: int = 42) -> Iterable[Dict[str, Any]]:
-    """
-    Generate a distribution of tasks. Each task provides a simple linear mapping
-    to predict a target y from inputs u via the SSM. In practice, tasks would
-    represent different MDPs or environments.
-    """
-    rng = np.random.default_rng(seed)
-    for _ in range(num_tasks):
-        # Task-specific target projection (unknown to the learner)
-        W_task = 0.5 * rng.standard_normal((cfg.output_dim, cfg.input_dim))
-        # Support (adaptation) and query (evaluation) splits
-        support = rng.standard_normal((16, cfg.input_dim))
-        query = rng.standard_normal((16, cfg.input_dim))
-        # Targets generated by unknown task mapping
-        y_support = support @ W_task.T
-        y_query = query @ W_task.T
-        yield {
-            "support": (support, y_support),
-            "query": (query, y_query),
-        }
+# Utilities
+def set_seed(seed: int):
+    np.random.seed(seed)
 
 
-def mse(pred: np.ndarray, target: np.ndarray) -> float:
-    return float(np.mean((pred - target) ** 2))
+def ensure_dirs(*paths):
+    for p in paths:
+        os.makedirs(p, exist_ok=True)
 
 
-# =============================
-# Meta-RL (MAML-like) Skeleton
-# =============================
-@dataclass
-class MetaConfig:
-    inner_steps: int = 1         # adaptation steps per task
-    inner_lr: float = 0.1        # learning rate for inner loop
-    outer_steps: int = 5         # number of meta-iterations
-    tasks_per_batch: int = 4     # tasks per meta-batch
+def save_checkpoint(path: str, params: Dict[str, np.ndarray]):
+    ensure_dirs(os.path.dirname(path))
+    np.savez(path, **params)
+    print(f"Checkpoint saved: {path}")
 
 
-def clone_params(params: Dict[str, np.ndarray]) -> Dict[str, np.ndarray]:
-    return {k: v.copy() for k, v in params.items()}
+def load_checkpoint(path: str) -> Dict[str, np.ndarray]:
+    with np.load(path, allow_pickle=False) as f:
+        return {k: f[k] for k in f.files}
 
 
-def ssm_forward_sequence(model: MinimalSSM, x: np.ndarray) -> np.ndarray:
-    """
-    Run the SSM over a sequence of inputs (x) and collect outputs.
-    x: [T, input_dim]
-    Returns Y: [T, output_dim]
-    """
-    model.reset_state()
-    outputs = []
-    for t in range(x.shape[0]):
-        y_t = model.step(x[t])
-        outputs.append(y_t)
-    return np.stack(outputs, axis=0)
+# Component builders
+def build_env(cfg: ExperimentConfig) -> EnvBatch:
+    env_cfg = EnvConfig(env_name=cfg.env_name, num_envs=cfg.num_envs, time_limit=cfg.time_limit, seed=cfg.seed)
+    return EnvBatch(env_cfg)
 
 
-def inner_adaptation(params: Dict[str, np.ndarray], support: Tuple[np.ndarray, np.ndarray], cfg: SSMConfig, inner_lr: float) -> Dict[str, np.ndarray]:
-    """
-    One gradient-like update step on support set.
-    This uses a finite-difference-style pseudo-gradient for illustration only.
-    In a real system, use autograd (e.g., PyTorch) and backpropagate through time.
-    """
-    model = MinimalSSM(cfg)
-    model.set_parameters(clone_params(params))
-
-    x_s, y_s = support
-    preds = ssm_forward_sequence(model, x_s)
-
-    # Compute simple gradients w.r.t. parameters via numeric approximation
-    grads = {k: np.zeros_like(v) for k, v in params.items()}
-
-    def loss_fn() -> float:
-        return mse(preds, y_s)
-
-    base_loss = loss_fn()
-    eps = 1e-3
-
-    # For brevity, perturb only C (output mapping) in this toy example
-    for i in range(model.C.shape[0]):
-        for j in range(model.C.shape[1]):
-            orig = model.C[i, j]
-            model.C[i, j] = orig + eps
-            preds_eps = ssm_forward_sequence(model, x_s)
-            loss_eps = mse(preds_eps, y_s)
-            grads["C"][i, j] = (loss_eps - base_loss) / eps
-            model.C[i, j] = orig
-
-    # Gradient descent update on C only (for illustration)
-    new_params = clone_params(params)
-    new_params["C"] -= inner_lr * grads["C"]
-    return new_params
+def build_policy(cfg: ExperimentConfig) -> SSM:
+    return SSM(cfg.ssm)
 
 
-def meta_train(cfg: SSMConfig, mcfg: MetaConfig, seed: int = 123) -> Dict[str, np.ndarray]:
-    """
-    Outer-loop meta-training that learns initialization parameters which can be
-    quickly adapted by inner_adaptation on new tasks.
-    """
-    rng = np.random.default_rng(seed)
-    model = MinimalSSM(cfg, seed=seed)
-    params = model.parameters()
+def build_meta_learner(cfg: ExperimentConfig) -> MetaLearner:
+    return MetaLearner(cfg.meta)
 
-    for step in range(mcfg.outer_steps):
-        batch_tasks = list(toy_task_generator(mcfg.tasks_per_batch, cfg, seed=rng.integers(1e9)))
 
-        meta_loss_accum = 0.0
-        meta_grads = {k: np.zeros_like(v) for k, v in params.items()}
+def build_adapter(cfg: ExperimentConfig) -> TestTimeAdapter:
+    return TestTimeAdapter(cfg.adapt)
 
-        for task in batch_tasks:
-            # Inner adaptation on support set
-            adapted_params = inner_adaptation(params, task["support"], cfg, mcfg.inner_lr)
 
-            # Evaluate on query split
-            eval_model = MinimalSSM(cfg)
-            eval_model.set_parameters(clone_params(adapted_params))
-            x_q, y_q = task["query"]
-            preds_q = ssm_forward_sequence(eval_model, x_q)
-            task_loss = mse(preds_q, y_q)
-            meta_loss_accum += task_loss
-
-            # Pseudo-gradient accumulation on C only (toy)
-            eps = 1e-3
-            for i in range(eval_model.C.shape[0]):
-                for j in range(eval_model.C.shape[1]):
-                    orig = eval_model.C[i, j]
-                    eval_model.C[i, j] = orig + eps
-                    preds_eps = ssm_forward_sequence(eval_model, x_q)
-                    loss_eps = mse(preds_eps, y_q)
-                    meta_grads["C"][i, j] += (loss_eps - task_loss) / eps
-                    eval_model.C[i, j] = orig
-
-        # Average gradients and update initialization params (C only here)
-        meta_loss = meta_loss_accum / max(1, len(batch_tasks))
-        meta_grads["C"] /= max(1, len(batch_tasks))
-        params["C"] -= mcfg.inner_lr * meta_grads["C"]
-
-        print(f"[meta] step={step} loss={meta_loss:.6f}")
-
+# Training: Meta-learning outer loop
+def train(cfg: ExperimentConfig):
+    """End-to-end training loop: initialization + task sampling + meta-learning"""
+    set_seed(cfg.seed)
+    ensure_dirs(cfg.log_dir, cfg.ckpt_dir)
+    
+    envs = build_env(cfg)
+    policy = build_policy(cfg)
+    meta = build_meta_learner(cfg)
+    
+    params = policy.init_parameters(seed=cfg.seed)
+    print("[Train] Starting meta-learning...")
+    
+    start = time.time()
+    for step in range(cfg.meta.outer_steps):
+        tasks = envs.sample_tasks(cfg.meta.tasks_per_batch)
+        params, metrics = meta.outer_step(policy_class=SSM, init_params=params, tasks=tasks, ssm_cfg=cfg.ssm)
+        
+        if (step + 1) % 10 == 0 or step == 0:
+            ckpt_path = os.path.join(cfg.ckpt_dir, f"step_{step+1}.npz")
+            save_checkpoint(ckpt_path, params)
+            print(f"[Train] step={step+1}/{cfg.meta.outer_steps} metrics={metrics}")
+    
+    latest = os.path.join(cfg.ckpt_dir, "latest.npz")
+    save_checkpoint(latest, params)
+    print(f"[Train] Complete in {time.time()-start:.1f}s")
     return params
 
 
-# ==============================================
-# Test-Time Compute: Online Adaptation Hooks
-# ==============================================
-
-def test_time_adapt(params: Dict[str, np.ndarray], obs: np.ndarray, target: np.ndarray, cfg: SSMConfig, lr: float = 0.05) -> Dict[str, np.ndarray]:
-    """
-    Perform a lightweight online update using a single observation-target pair.
-    Here we again adapt only C via a finite-difference pseudo-gradient.
-    """
-    model = MinimalSSM(cfg)
-    model.set_parameters(clone_params(params))
-    preds = ssm_forward_sequence(model, obs[None, :])  # shape [1, output_dim]
-    base_loss = mse(preds, target[None, :])
-
-    eps = 1e-3
-    grad_C = np.zeros_like(model.C)
-    for i in range(model.C.shape[0]):
-        for j in range(model.C.shape[1]):
-            orig = model.C[i, j]
-            model.C[i, j] = orig + eps
-            preds_eps = ssm_forward_sequence(model, obs[None, :])
-            loss_eps = mse(preds_eps, target[None, :])
-            grad_C[i, j] = (loss_eps - base_loss) / eps
-            model.C[i, j] = orig
-
-    new_params = clone_params(params)
-    new_params["C"] -= lr * grad_C
-    return new_params
+# Evaluation: Rollouts without adaptation
+def evaluate(cfg: ExperimentConfig, params: Dict[str, np.ndarray], episodes: int = 10):
+    """Evaluate policy without test-time adaptation"""
+    set_seed(cfg.seed)
+    envs = build_env(cfg)
+    policy = build_policy(cfg)
+    policy.set_parameters(params)
+    
+    print(f"[Eval] Running {episodes} episodes...")
+    returns = []
+    for ep in range(episodes):
+        obs = envs.reset()
+        policy.reset()
+        ep_ret = np.zeros(cfg.num_envs)
+        for _ in range(cfg.time_limit):
+            actions = policy.act(obs)
+            obs, rew, done, _ = envs.step(actions)
+            ep_ret += rew
+            if done.all():
+                break
+        returns.extend(ep_ret.tolist())
+    
+    metrics = {"mean_return": float(np.mean(returns)), "std_return": float(np.std(returns))}
+    print(f"[Eval] Results: {metrics}")
+    return metrics
 
 
-def run_inference_with_test_time_compute(params: Dict[str, np.ndarray], inputs: np.ndarray, cfg: SSMConfig, targets: np.ndarray | None = None, adapt: bool = True) -> np.ndarray:
-    """
-    Run inference, optionally performing online adaptation using test-time compute.
-    If targets are provided, we simulate supervised feedback for adaptation.
-    """
-    model = MinimalSSM(cfg)
-    model.set_parameters(clone_params(params))
-    outputs = []
+# Adaptation: Test-time adaptation during inference
+def evaluate_with_adaptation(cfg: ExperimentConfig, params: Dict[str, np.ndarray], episodes: int = 10):
+    """Evaluate policy with test-time adaptation"""
+    set_seed(cfg.seed)
+    envs = build_env(cfg)
+    adapter = build_adapter(cfg)
+    
+    print(f"[Adapt] Running {episodes} episodes with adaptation...")
+    returns = []
+    for ep in range(episodes):
+        obs = envs.reset()
+        ep_params = dict(params)
+        policy = build_policy(cfg)
+        policy.set_parameters(ep_params)
+        policy.reset()
+        
+        # Pre-rollout adaptation
+        if cfg.adapt.steps > 0:
+            ep_params = adapter.adapt(policy, envs, steps=cfg.adapt.steps)
+            policy.set_parameters(ep_params)
+        
+        ep_ret = np.zeros(cfg.num_envs)
+        for _ in range(cfg.time_limit):
+            actions = policy.act(obs)
+            obs, rew, done, _ = envs.step(actions)
+            ep_ret += rew
+            
+            # Online adaptation during rollout
+            if cfg.adapt.online:
+                ep_params = adapter.online_step(policy, obs, rew)
+                policy.set_parameters(ep_params)
+            
+            if done.all():
+                break
+        returns.extend(ep_ret.tolist())
+    
+    metrics = {"mean_return": float(np.mean(returns)), "std_return": float(np.std(returns))}
+    print(f"[Adapt] Results: {metrics}")
+    return metrics
 
-    for t in range(inputs.shape[0]):
-        u_t = inputs[t]
-        y_t = model.step(u_t)
-        outputs.append(y_t)
 
-        # Optional online adaptation if target for this step is known
-        if adapt and targets is not None:
-            params = test_time_adapt(model.parameters(), u_t, targets[t], cfg)
-            model.set_parameters(params)
+# Command-line interface
+def build_parser():
+    parser = argparse.ArgumentParser(
+        description="SSM-MetaRL-TestCompute: Unified pipeline for SSM-based Meta-RL with test-time adaptation",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Train with basic config
+  python main.py train --config basic --outer-steps 100
+  
+  # Evaluate trained checkpoint
+  python main.py eval --checkpoint checkpoints/latest.npz --episodes 20
+  
+  # Evaluate with test-time adaptation
+  python main.py adapt --checkpoint checkpoints/latest.npz --episodes 20 --adapt-steps 10
+"""
+    )
+    
+    subparsers = parser.add_subparsers(dest="mode", help="Operation mode", required=True)
+    
+    # Train mode
+    train_parser = subparsers.add_parser("train", help="Train meta-initialization via meta-learning")
+    train_parser.add_argument("--config", default="basic", choices=list(EXAMPLE_CONFIGS.keys()), help="Experiment config")
+    train_parser.add_argument("--seed", type=int, help="Random seed")
+    train_parser.add_argument("--outer-steps", type=int, help="Number of meta-learning outer steps")
+    train_parser.add_argument("--tasks-per-batch", type=int, help="Tasks per meta-batch")
+    train_parser.add_argument("--ckpt-dir", help="Checkpoint directory")
+    
+    # Eval mode
+    eval_parser = subparsers.add_parser("eval", help="Evaluate policy without adaptation")
+    eval_parser.add_argument("--checkpoint", required=True, help="Path to checkpoint .npz file")
+    eval_parser.add_argument("--config", default="basic", choices=list(EXAMPLE_CONFIGS.keys()), help="Experiment config")
+    eval_parser.add_argument("--episodes", type=int, default=10, help="Number of episodes")
+    
+    # Adapt mode
+    adapt_parser = subparsers.add_parser("adapt", help="Evaluate policy with test-time adaptation")
+    adapt_parser.add_argument("--checkpoint", required=True, help="Path to checkpoint .npz file")
+    adapt_parser.add_argument("--config", default="basic", choices=list(EXAMPLE_CONFIGS.keys()), help="Experiment config")
+    adapt_parser.add_argument("--episodes", type=int, default=10, help="Number of episodes")
+    adapt_parser.add_argument("--adapt-steps", type=int, help="Adaptation steps before rollout")
+    adapt_parser.add_argument("--online", action="store_true", help="Enable online adaptation during rollout")
+    
+    return parser
 
-    return np.stack(outputs, axis=0)
-
-
-# ========
-# Script
-# ========
 
 def main():
-    cfg = SSMConfig(state_dim=8, input_dim=4, output_dim=2)
-    mcfg = MetaConfig(inner_steps=1, inner_lr=0.1, outer_steps=3, tasks_per_batch=3)
-
-    print("Training meta-initialization (toy example)...")
-    init_params = meta_train(cfg, mcfg)
-
-    print("\nRunning inference with (simulated) test-time compute...")
-    rng = np.random.default_rng(0)
-    inputs = rng.standard_normal((10, cfg.input_dim))
-    true_W = 0.3 * rng.standard_normal((cfg.output_dim, cfg.input_dim))
-    targets = inputs @ true_W.T  # synthetic targets to enable adaptation demo
-
-    outputs = run_inference_with_test_time_compute(init_params, inputs, cfg, targets=targets, adapt=True)
-    print("Outputs shape:", outputs.shape)
+    parser = build_parser()
+    args = parser.parse_args()
+    
+    # Load base config
+    cfg = EXAMPLE_CONFIGS.get(args.config, EXAMPLE_CONFIGS["basic"])
+    
+    # Override with CLI args
+    if hasattr(args, "seed") and args.seed is not None:
+        cfg.seed = args.seed
+    if hasattr(args, "outer_steps") and args.outer_steps is not None:
+        cfg.meta.outer_steps = args.outer_steps
+    if hasattr(args, "tasks_per_batch") and args.tasks_per_batch is not None:
+        cfg.meta.tasks_per_batch = args.tasks_per_batch
+    if hasattr(args, "ckpt_dir") and args.ckpt_dir is not None:
+        cfg.ckpt_dir = args.ckpt_dir
+    if hasattr(args, "adapt_steps") and args.adapt_steps is not None:
+        cfg.adapt.steps = args.adapt_steps
+    if hasattr(args, "online") and args.online:
+        cfg.adapt.online = True
+    
+    print(f"=" * 60)
+    print(f"SSM-MetaRL-TestCompute Pipeline")
+    print(f"Mode: {args.mode.upper()}")
+    print(f"Config: {args.config}")
+    print(f"="  * 60)
+    
+    if args.mode == "train":
+        train(cfg)
+    elif args.mode == "eval":
+        params = load_checkpoint(args.checkpoint)
+        evaluate(cfg, params, episodes=args.episodes)
+    elif args.mode == "adapt":
+        params = load_checkpoint(args.checkpoint)
+        evaluate_with_adaptation(cfg, params, episodes=args.episodes)
+    else:
+        parser.print_help()
+        sys.exit(1)
+    
+    print(f"\nDone.")
 
 
 if __name__ == "__main__":
