@@ -5,6 +5,7 @@ A research implementation combining State Space Models (SSM) with Meta-Reinforce
 ## Overview
 
 This repository implements a hybrid approach that integrates:
+
 - **State Space Models**: For efficient sequence modeling and long-range dependencies
 - **Meta-Learning Loop**: Outer loop for meta-training across task distributions
 - **Test-Time Adaptation**: Online weight updates during inference using gradient-based adaptation
@@ -16,6 +17,7 @@ The `core/` directory contains the foundational State Space Model implementation
 ### `core/ssm.py`
 
 A full-featured State Space Model class that implements:
+
 - **Linear state transition dynamics**: Follows standard SSM formulation with learnable matrices A, B, C, D
 - **Recurrent cell processing**: Maintains hidden state across sequence steps
 - **Observation and output modules**: Transforms inputs to outputs through state space
@@ -25,11 +27,13 @@ A full-featured State Space Model class that implements:
 #### Testing the Core Module
 
 To run the SSM module tests:
+
 ```bash
 python core/ssm.py
 ```
 
 This will execute all test cases including:
+
 - Basic initialization and forward pass
 - Sequence processing capabilities
 - State persistence and reset functionality
@@ -47,86 +51,121 @@ The `meta_rl/` directory contains the meta-reinforcement learning implementation
 A comprehensive MAML (Model-Agnostic Meta-Learning) implementation for SSM-based policies that includes:
 
 - **SSMMetaPolicy**: Neural network policy that integrates State Space Model components for sequential decision making
-- **MetaMAMLTrainer**: Complete meta-learning framework with outer/inner loop structure
-- **TaskBatch**: Task management system for meta-training episodes
-- **Fast Adaptation**: Gradient-based adaptation for quick learning on new tasks
+- **MetaMAML**: Complete meta-learning orchestrator that manages:
+  - Inner loop adaptation (task-specific fine-tuning)
+  - Outer loop meta-updates (learning to learn)
+  - Gradient computation through adaptation steps
+- **Integration hooks**: Placeholder connections for SSM-based architectures
+- **Test-time adaptation**: Methods for online weight updates during inference
+
+#### Key Components
+
+1. **Policy Network**: Combines SSM for sequence modeling with action prediction heads
+2. **Inner Loop**: Fast adaptation to new tasks using few-shot gradient updates
+3. **Outer Loop**: Meta-gradient computation for improving adaptation efficiency
+4. **Task Sampling**: Support for multi-task training distributions
+
+#### Testing the Meta-RL Module
+
+Run the module tests:
+
+```bash
+python meta_rl/meta_maml.py
+```
+
+#### References
+
+This implementation follows patterns from:
+
+- MAML paper: Finn et al., "Model-Agnostic Meta-Learning for Fast Adaptation of Deep Networks"
+- RL² (Fast RL via Slow RL): Duan et al., "RL²: Fast Reinforcement Learning via Slow Reinforcement Learning"
+- Meta-World benchmark: Yu et al., "Meta-World: A Benchmark and Evaluation for Multi-Task and Meta Reinforcement Learning"
+
+## Environment Runner Module
+
+The `env_runner/` directory contains the RL environment management system for meta-RL tasks:
+
+### `env_runner/environment.py`
+
+A comprehensive environment runner implementing interfaces compatible with Meta-World and RLlib:
+
+- **Environment**: Base environment class providing unified RL interfaces
+  - Standard `reset()` and `step()` methods following Gym API
+  - Task identification for multi-task scenarios
+  - Configurable episode length and seeding
+  
+- **BatchedEnvironment**: Parallel environment wrapper for efficient training
+  - Manages multiple environment instances simultaneously
+  - Vectorized operations for batched `reset()` and `step()`
+  - Reduces training time through parallelization
+  
+- **MultiTaskEnvironment**: Multi-task support following Meta-World patterns
+  - Task sampling and switching capabilities
+  - Maintains task distributions for meta-learning
+  - Supports both random sampling and explicit task specification
+  
+- **SSMPolicyIntegration**: Integration utilities for SSM-based policies
+  - Observation sequence preparation for SSM input
+  - Hidden state extraction from policy outputs
+  - Meta-feature computation from trajectories
+  - Bridges environment observations with SSM policy requirements
 
 #### Key Features
 
-- **MAML-style Meta-Learning**: Implements the classic gradient-based meta-learning approach with inner and outer loops
-- **SSM Integration**: Combines policy networks with SSM layers for enhanced sequential processing
-- **Task Distribution Support**: Handles batched task training following Meta-World and similar benchmarks
-- **Research References**: Extensively documented with references to key research implementations
-
-#### Source References and Integration Approach
-
-This implementation draws from several key research codebases:
-
-1. **State-Spaces Repository** (`https://github.com/state-spaces/s4`)
-   - SSM architecture patterns and layer implementations
-   - S4 and Mamba integration points for policy learning
-   - Efficient state space computations
-
-2. **Original MAML Implementation** (`https://github.com/cbfinn/maml`)
-   - Gradient-based meta-learning structure
-   - Inner/outer loop optimization patterns
-   - Fast adaptation mechanisms
-
-3. **PyTorch MAML** (`https://github.com/tristandeleu/pytorch-maml`)
-   - Modern PyTorch implementation patterns
-   - Functional API usage for gradient computation
-   - Efficient batched operations
-
-4. **Distributionally Adaptive Meta-RL**
-   - Task distribution management
-   - Adaptive sampling strategies
-   - Environment integration patterns
-
-5. **Meta-World Benchmark** (`https://github.com/rlworkgroup/metaworld`)
-   - Task batch structure and management
-   - Environment interface standards
-   - Evaluation protocols
-
-#### Integration Strategy
-
-The module follows a modular design that allows for:
-- **Plug-and-play SSM components**: Easy integration of different SSM architectures (S4, Mamba, etc.)
-- **Environment flexibility**: Support for various RL environments and task distributions
-- **Research extensibility**: Clear integration points for new meta-learning algorithms
-- **Performance optimization**: Efficient batched operations and gradient computations
+1. **Gym-Compatible API**: Standard interfaces ensure compatibility with existing RL codebases
+2. **Batched Operations**: Efficient parallel environment execution for faster training
+3. **Multi-Task Support**: Native support for task distributions in meta-learning
+4. **SSM Integration Hooks**: Purpose-built utilities for State Space Model policies
+5. **Flexible Factory Pattern**: Easy environment creation with `create_environment()` function
 
 #### Usage Example
 
 ```python
-from meta_rl.meta_maml import SSMMetaPolicy, MetaMAMLTrainer, TaskBatch
+from env_runner.environment import create_environment, BatchedEnvironment
 
-# Create SSM-based meta-policy
-policy = SSMMetaPolicy(state_dim=84, action_dim=4)
+# Create single environment
+env = create_environment('MetaWorld-reach-v2', batch_size=1)
+obs = env.reset()
+obs, reward, done, info = env.step(action)
 
-# Initialize meta-trainer
-trainer = MetaMAMLTrainer(policy, meta_lr=1e-3, inner_lr=1e-2)
-
-# Create task batch for meta-training
-task_batch = TaskBatch(tasks, batch_size=16)
-
-# Run meta-training
-meta_losses = trainer.meta_train(task_batch, num_meta_iterations=1000)
-
-# Adapt to new task
-adapted_policy = trainer.adapt_to_new_task(new_task_data)
+# Create batched multi-task environment
+env = create_environment(
+    'MetaWorld-MT10',
+    batch_size=16,
+    multi_task=True,
+    tasks=list(range(10))
+)
+observations = env.reset()  # Shape: (16, obs_dim)
+observations, rewards, dones, infos = env.step(actions)  # Batched
 ```
 
-#### Current Implementation Status
+#### Architecture
 
-The current implementation provides:
-- Complete MAML framework structure
-- SSM integration placeholders and patterns
-- Comprehensive documentation and research references
-- Extensible architecture for various SSM types
-- Task management and batch processing
+The environment runner is designed to work seamlessly with:
 
-**Integration TODOs** (marked in code):
-- Connect with actual SSM layers from `core/ssm.py`
+- **Meta-World**: Robotics manipulation tasks for meta-RL research
+- **RLlib**: Scalable RL library with distributed training support
+- **Custom environments**: Extensible base classes for domain-specific tasks
+
+Environments provide the interaction layer between SSM-based policies (from `core/` and `meta_rl/`) and the task distribution, enabling:
+
+1. Data collection during inner-loop adaptation
+2. Multi-task training for meta-learning
+3. Test-time evaluation on novel tasks
+4. Trajectory batching for efficient SSM sequence processing
+
+#### References
+
+This implementation follows standards from:
+
+- Meta-World: https://github.com/Farama-Foundation/Metaworld
+- RLlib Documentation: https://docs.ray.io/en/latest/rllib/index.html
+- OpenAI Gym: Standard RL environment API specification
+
+## Future Extensions
+
+Key areas for expansion:
+
 - Implement proper RL loss functions (PPO, A2C, etc.)
 - Add environment-specific adaptations
 - Optimize gradient computation for large models
@@ -157,6 +196,7 @@ python meta_rl/meta_maml.py
 ### What to Expect
 
 The code provides:
+
 - A minimal SSM implementation with state transitions
 - Complete MAML meta-learning framework structure
 - SSM-based policy integration patterns
