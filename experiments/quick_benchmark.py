@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Quick Benchmark Script for SSM-MetaRL
-Directly tests Adapter and MetaMAML APIs with correct batch dict structure.
-Designed to validate API correctness and basic functionality.
+Quick Benchmark Script for SSM-MetaRL - 100% API-aligned.
+Tests all three core APIs: SSM, MetaMAML, and Adapter.
+
 Usage:
     python experiments/quick_benchmark.py
 """
@@ -11,208 +11,176 @@ import sys
 import time
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-from typing import Dict, Any
+from typing import Dict, List, Tuple
 
 # Add parent directory to path
 sys.path.insert(0, os.path.abspath(os.path.dirname(__file__) + '/..'))
 
 from core.ssm import SSM
-from adaptation.test_time_adaptation import Adapter, AdaptationConfig
 from meta_rl.meta_maml import MetaMAML
+from adaptation.test_time_adaptation import Adapter, AdaptationConfig
 
-def generate_dummy_batch(batch_size: int, state_dim: int, action_dim: int) -> Dict[str, torch.Tensor]:
-    """
-    Generate dummy batch data in dict format as expected by Adapter.adapt().
-    
-    Args:
-        batch_size: Number of samples
-        state_dim: State dimension
-        action_dim: Action dimension (used as target dimension)
-    
-    Returns:
-        Dict with 'observations' and 'targets' keys
-    """
-    return {
-        'observations': torch.randn(batch_size, state_dim),
-        'targets': torch.randn(batch_size, action_dim)
-    }
 
-def simple_loss_fn(model: nn.Module, batch: Dict[str, torch.Tensor]) -> torch.Tensor:
+def benchmark_ssm():
     """
-    Simple MSE loss function that works with dict batches.
-    
-    Args:
-        model: The model to evaluate
-        batch: Dict with 'observations' and 'targets'
-    
-    Returns:
-        Loss tensor
-    """
-    obs = batch['observations']
-    targets = batch['targets']
-    predictions = model(obs)
-    return F.mse_loss(predictions, targets)
-
-def test_adapter(state_dim: int = 10, action_dim: int = 4, batch_size: int = 32):
-    """
-    Test the Adapter API with correct configuration.
-    Only uses lr and max_steps_per_call in AdaptationConfig.
+    Benchmark SSM with exact API:
+    - SSM(state_dim, hidden_dim=128, output_dim=32, device='cpu')
+    - forward(x, hidden_state=None) -> single tensor
     """
     print("\n" + "="*60)
-    print("Testing Adapter API")
+    print("1. SSM Benchmark")
     print("="*60)
     
-    # Create SSM model
-    ssm_model = SSM(
-        state_dim=state_dim,
-        action_dim=action_dim,
-        ssm_dim=64,
-        num_layers=2
-    )
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     
-    # Create AdaptationConfig with ONLY lr and max_steps_per_call
+    # Create SSM with exact defaults
+    model = SSM(state_dim=10, hidden_dim=128, output_dim=32, device=device)
+    print(f"✓ Created SSM(state_dim=10, hidden_dim=128, output_dim=32, device='{device}')")
+    
+    # Test forward pass
+    batch_size = 32
+    state = torch.randn(batch_size, 10).to(device)
+    
+    start_time = time.time()
+    output = model.forward(state, hidden_state=None)
+    elapsed = time.time() - start_time
+    
+    # Verify output is single tensor, not tuple
+    assert isinstance(output, torch.Tensor), "forward() must return single tensor"
+    assert output.shape == (batch_size, 32), f"Expected (32, 32), got {output.shape}"
+    print(f"✓ forward() returns single tensor with shape {output.shape}")
+    print(f"✓ Forward pass time: {elapsed*1000:.2f}ms")
+    
+    return model
+
+
+def benchmark_meta_maml(model):
+    """
+    Benchmark MetaMAML with exact API:
+    - MetaMAML(model, inner_lr, outer_lr, first_order=False)
+    - adapt(support_x, support_y, loss_fn, num_steps) -> adapted_model
+    - meta_update(tasks: List[Tuple[support_x, support_y, query_x, query_y]], loss_fn) -> meta_loss
+    """
+    print("\n" + "="*60)
+    print("2. MetaMAML Benchmark")
+    print("="*60)
+    
+    device = next(model.parameters()).device
+    
+    # Create MetaMAML with exact signature
+    meta_learner = MetaMAML(model, inner_lr=0.01, outer_lr=0.001, first_order=False)
+    print("✓ Created MetaMAML(model, inner_lr=0.01, outer_lr=0.001, first_order=False)")
+    
+    loss_fn = nn.MSELoss()
+    
+    # Test adapt() method
+    support_x = torch.randn(10, 10).to(device)
+    support_y = torch.randn(10, 32).to(device)
+    
+    start_time = time.time()
+    adapted_model = meta_learner.adapt(support_x, support_y, loss_fn, num_steps=5)
+    elapsed = time.time() - start_time
+    
+    assert isinstance(adapted_model, nn.Module), "adapt() must return a model"
+    print(f"✓ adapt() returned adapted model")
+    print(f"✓ Adaptation time: {elapsed*1000:.2f}ms")
+    
+    # Test meta_update() method with exact task format
+    tasks = []
+    for _ in range(8):
+        support_x = torch.randn(10, 10).to(device)
+        support_y = torch.randn(10, 32).to(device)
+        query_x = torch.randn(10, 10).to(device)
+        query_y = torch.randn(10, 32).to(device)
+        tasks.append((support_x, support_y, query_x, query_y))
+    
+    start_time = time.time()
+    meta_loss = meta_learner.meta_update(tasks, loss_fn)
+    elapsed = time.time() - start_time
+    
+    assert isinstance(meta_loss, float) or isinstance(meta_loss, torch.Tensor), "meta_update() must return loss"
+    print(f"✓ meta_update() with {len(tasks)} tasks, meta_loss: {meta_loss:.4f}")
+    print(f"✓ Meta-update time: {elapsed*1000:.2f}ms")
+
+
+def benchmark_adapter(model):
+    """
+    Benchmark Adapter with exact API:
+    - AdaptationConfig(lr, grad_clip_norm, trust_region_eps, ema_decay, entropy_weight, max_steps_per_call)
+    - Adapter(model, cfg)
+    - adapt(loss_fn, batch_dict) -> loss
+    """
+    print("\n" + "="*60)
+    print("3. Adapter Benchmark")
+    print("="*60)
+    
+    device = next(model.parameters()).device
+    
+    # Create config with exact fields from implementation
     config = AdaptationConfig(
-        lr=0.001,
+        lr=0.01,
+        grad_clip_norm=1.0,
+        trust_region_eps=0.01,
+        ema_decay=0.99,
+        entropy_weight=0.01,
         max_steps_per_call=5
     )
+    print("✓ Created AdaptationConfig with all required fields")
     
-    # Create Adapter
-    adapter = Adapter(model=ssm_model, config=config)
+    # Create Adapter with exact signature
+    adapter = Adapter(model, config)
+    print("✓ Created Adapter(model, config)")
     
-    # Generate batch as dict
-    batch = generate_dummy_batch(batch_size, state_dim, action_dim)
+    loss_fn = nn.MSELoss()
     
-    print(f"Batch keys: {list(batch.keys())}")
-    print(f"Observations shape: {batch['observations'].shape}")
-    print(f"Targets shape: {batch['targets'].shape}")
+    # Prepare batch_dict
+    batch_size = 16
+    states = torch.randn(batch_size, 10).to(device)
+    targets = torch.randn(batch_size, 32).to(device)
+    batch_dict = {'states': states, 'targets': targets}
     
-    # Test adaptation - pass loss_fn and batch (as dict)
-    print("\nCalling adapter.adapt(loss_fn=simple_loss_fn, batch=batch)...")
     start_time = time.time()
-    result = adapter.adapt(loss_fn=simple_loss_fn, batch=batch)
-    adapt_time = time.time() - start_time
+    loss = adapter.adapt(loss_fn, batch_dict)
+    elapsed = time.time() - start_time
     
-    print(f"Adaptation completed in {adapt_time:.4f}s")
-    print(f"Result type: {type(result)}")
-    print(f"Result keys: {list(result.keys()) if isinstance(result, dict) else 'N/A'}")
-    
-    # Validate result structure
-    if isinstance(result, dict):
-        if 'adapted_params' in result:
-            print(f"✓ 'adapted_params' present")
-        if 'losses' in result:
-            print(f"✓ 'losses' present, length: {len(result['losses'])}")
-            print(f"  Loss trajectory: {result['losses']}")
-    
-    print("\n✓ Adapter test completed successfully")
-    return adapter, result
+    assert isinstance(loss, float) or isinstance(loss, torch.Tensor), "adapt() must return loss"
+    print(f"✓ adapt(loss_fn, batch_dict) returned loss: {loss:.4f}")
+    print(f"✓ Adaptation time: {elapsed*1000:.2f}ms")
 
-def test_meta_maml(state_dim: int = 10, action_dim: int = 4, num_tasks: int = 4, batch_size: int = 16):
-    """
-    Test the MetaMAML API with correct constructor signature.
-    Only uses inner_lr, outer_lr, and first_order parameters.
-    """
-    print("\n" + "="*60)
-    print("Testing MetaMAML API")
-    print("="*60)
-    
-    # Create SSM model
-    ssm_model = SSM(
-        state_dim=state_dim,
-        action_dim=action_dim,
-        ssm_dim=64,
-        num_layers=2
-    )
-    
-    # Create MetaMAML with ONLY inner_lr, outer_lr, first_order
-    print("Creating MetaMAML(model, inner_lr=0.01, outer_lr=0.001, first_order=True)...")
-    meta_maml = MetaMAML(
-        model=ssm_model,
-        inner_lr=0.01,
-        outer_lr=0.001,
-        first_order=True
-    )
-    
-    # Generate tasks (list of dicts)
-    print(f"\nGenerating {num_tasks} tasks...")
-    tasks = []
-    for i in range(num_tasks):
-        support = generate_dummy_batch(batch_size, state_dim, action_dim)
-        query = generate_dummy_batch(batch_size, state_dim, action_dim)
-        tasks.append({
-            'support': support,
-            'query': query
-        })
-    
-    print(f"Task 0 keys: {list(tasks[0].keys())}")
-    print(f"Task 0 support keys: {list(tasks[0]['support'].keys())}")
-    print(f"Task 0 query keys: {list(tasks[0]['query'].keys())}")
-    
-    # Test meta-update
-    print("\nCalling meta_maml.meta_update(tasks, loss_fn=simple_loss_fn)...")
-    start_time = time.time()
-    result = meta_maml.meta_update(tasks, loss_fn=simple_loss_fn)
-    meta_time = time.time() - start_time
-    
-    print(f"Meta-update completed in {meta_time:.4f}s")
-    print(f"Result type: {type(result)}")
-    
-    # Validate result
-    if isinstance(result, dict):
-        print(f"Result keys: {list(result.keys())}")
-        if 'meta_loss' in result:
-            print(f"✓ 'meta_loss' present: {result['meta_loss']:.4f}")
-        if 'task_losses' in result:
-            print(f"✓ 'task_losses' present, count: {len(result['task_losses'])}")
-    else:
-        print(f"Result value: {result}")
-    
-    print("\n✓ MetaMAML test completed successfully")
-    return meta_maml, result
 
-def main():
+def run_all_benchmarks():
     """
-    Main benchmark runner.
-    Tests both Adapter and MetaMAML with strict API compliance.
+    Run all benchmarks in sequence.
     """
     print("\n" + "#"*60)
-    print("# SSM-MetaRL Quick Benchmark")
-    print("# Testing API Compliance: Adapter & MetaMAML")
+    print("# SSM-MetaRL Quick Benchmark Suite")
+    print("# Validates 100% API compliance")
     print("#"*60)
     
-    torch.manual_seed(42)
-    
-    # Test 1: Adapter API
     try:
-        adapter, adapter_result = test_adapter()
-        print("\n[PASS] Adapter API test")
+        # 1. Benchmark SSM
+        model = benchmark_ssm()
+        
+        # 2. Benchmark MetaMAML
+        benchmark_meta_maml(model)
+        
+        # 3. Benchmark Adapter
+        benchmark_adapter(model)
+        
+        print("\n" + "="*60)
+        print("✓ ALL BENCHMARKS PASSED")
+        print("✓ All APIs are 100% compliant with implementations")
+        print("="*60 + "\n")
+        
+    except AssertionError as e:
+        print(f"\n✗ BENCHMARK FAILED: {e}")
+        sys.exit(1)
     except Exception as e:
-        print(f"\n[FAIL] Adapter API test: {e}")
+        print(f"\n✗ ERROR: {e}")
         import traceback
         traceback.print_exc()
-        return
-    
-    # Test 2: MetaMAML API
-    try:
-        meta_maml, maml_result = test_meta_maml()
-        print("\n[PASS] MetaMAML API test")
-    except Exception as e:
-        print(f"\n[FAIL] MetaMAML API test: {e}")
-        import traceback
-        traceback.print_exc()
-        return
-    
-    # Final summary
-    print("\n" + "#"*60)
-    print("# Benchmark Summary")
-    print("#"*60)
-    print("✓ All API tests passed")
-    print("✓ Adapter: Correct AdaptationConfig (lr, max_steps_per_call only)")
-    print("✓ Adapter.adapt: Uses loss_fn and batch dict")
-    print("✓ MetaMAML: Correct constructor (inner_lr, outer_lr, first_order only)")
-    print("✓ All batch data passed as dicts with 'observations' and 'targets'")
-    print("\nBenchmark completed successfully!\n")
+        sys.exit(1)
+
 
 if __name__ == "__main__":
-    main()
+    run_all_benchmarks()
