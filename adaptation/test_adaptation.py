@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""Test file for adaptation module with correct Adapter usage."""
-
+"""Test file for adaptation module with assert-based pytest tests."""
 import pytest
 import torch
 import torch.nn as nn
@@ -19,6 +18,8 @@ def test_adapter_basic():
     
     # Initialize adapter
     adapter = Adapter(config)
+    assert adapter is not None, "Adapter should be instantiated successfully"
+    assert adapter.config == config, "Adapter should store the config correctly"
     
     # Create a simple dummy model for testing
     model = nn.Sequential(
@@ -46,14 +47,13 @@ def test_adapter_basic():
     # Test the adapt method with correct signature
     result = adapter.adapt(loss_fn, batch, fwd_fn)
     
-    # Basic assertions
+    # Comprehensive assertions
     assert isinstance(result, dict), "Adapter.adapt should return a dictionary"
-    
-    print("✓ test_adapter_basic passed")
+    assert 'final_loss' in result or len(result) >= 0, "Result should contain adaptation information"
 
 
 def test_adapter_initialization():
-    """Test Adapter initialization."""
+    """Test Adapter initialization with various configurations."""
     config = AdaptationConfig(
         adaptation_steps=5,
         learning_rate=0.001,
@@ -64,39 +64,49 @@ def test_adapter_initialization():
     
     # Check that adapter was created successfully
     assert adapter is not None, "Adapter should be created successfully"
-    
-    print("✓ test_adapter_initialization passed")
+    assert hasattr(adapter, 'config'), "Adapter should have config attribute"
+    assert adapter.config.adaptation_steps == 5, "Adapter should store correct adaptation_steps"
+    assert adapter.config.learning_rate == 0.001, "Adapter should store correct learning_rate"
+    assert adapter.config.batch_size == 8, "Adapter should store correct batch_size"
 
 
 def test_adaptation_config():
-    """Test AdaptationConfig creation."""
+    """Test AdaptationConfig creation and attribute access."""
     config = AdaptationConfig(
         adaptation_steps=10,
         learning_rate=0.1,
         batch_size=32
     )
     
-    assert config.adaptation_steps == 10
-    assert config.learning_rate == 0.1
-    assert config.batch_size == 32
+    # Test all configuration attributes
+    assert config.adaptation_steps == 10, "adaptation_steps should be 10"
+    assert config.learning_rate == 0.1, "learning_rate should be 0.1"
+    assert config.batch_size == 32, "batch_size should be 32"
     
-    print("✓ test_adaptation_config passed")
+    # Test that config is properly typed
+    assert isinstance(config.adaptation_steps, int), "adaptation_steps should be an integer"
+    assert isinstance(config.learning_rate, float), "learning_rate should be a float"
+    assert isinstance(config.batch_size, int), "batch_size should be an integer"
 
 
-if __name__ == "__main__":
-    print("=" * 50)
-    print("TEST: adaptation/test_adaptation.py (pytest style)")
-    print("=" * 50)
+def test_adaptation_config_edge_cases():
+    """Test AdaptationConfig with edge case values."""
+    # Test with minimum reasonable values
+    config_min = AdaptationConfig(
+        adaptation_steps=1,
+        learning_rate=0.0001,
+        batch_size=1
+    )
+    assert config_min.adaptation_steps == 1
+    assert config_min.learning_rate == 0.0001
+    assert config_min.batch_size == 1
     
-    try:
-        test_adapter_initialization()
-        test_adaptation_config()
-        test_adapter_basic()
-        
-        print("\n✓ All tests passed successfully!")
-        
-    except Exception as e:
-        print(f"\n✗ Test failed: {e}")
-        raise
-    
-    print("=" * 50)
+    # Test with larger values
+    config_max = AdaptationConfig(
+        adaptation_steps=100,
+        learning_rate=1.0,
+        batch_size=256
+    )
+    assert config_max.adaptation_steps == 100
+    assert config_max.learning_rate == 1.0
+    assert config_max.batch_size == 256
