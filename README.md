@@ -22,6 +22,90 @@ A research framework combining State Space Models (SSM), Meta-Learning (MAML), a
 pip install torch numpy gymnasium
 ```
 
+## Debug & Development Mode
+
+### Enabling Debug Mode
+
+For comprehensive error logging and debugging, set the `DEBUG` environment variable:
+
+```bash
+# Linux/macOS
+export DEBUG=True
+python main.py
+
+# Windows (PowerShell)
+$env:DEBUG="True"
+python main.py
+
+# Windows (CMD)
+set DEBUG=True
+python main.py
+```
+
+### Running Scripts with Debug Mode
+
+```bash
+# Main training script
+DEBUG=True python main.py
+
+# Quick benchmark
+DEBUG=True python experiments/quick_benchmark.py
+
+# Run tests with verbose error output
+DEBUG=True python -m pytest -v --tb=long
+
+# Run specific test with full traceback
+DEBUG=True python -m pytest core/test_ssm.py -v --tb=long -s
+```
+
+### Development Guidelines
+
+**For Contributors and Developers:**
+
+1. **Always enable DEBUG mode when investigating errors:**
+   - Full stack traces will be printed
+   - All intermediate values logged
+   - Error messages include context and state information
+
+2. **Recommended pytest flags for debugging:**
+   ```bash
+   pytest -v --tb=long -s --log-cli-level=DEBUG
+   ```
+   - `-v`: Verbose output
+   - `--tb=long`: Full traceback
+   - `-s`: Show print statements
+   - `--log-cli-level=DEBUG`: Show all debug logs
+
+3. **Common debug patterns:**
+   ```python
+   import os
+   DEBUG = os.getenv('DEBUG', 'False').lower() == 'true'
+   
+   if DEBUG:
+       print(f"Debug: state_dim={state_dim}, hidden_dim={hidden_dim}")
+       import traceback
+       traceback.print_exc()
+   ```
+
+4. **CI/CD Pipeline Debug Mode:**
+   - All GitHub Actions workflows automatically run with DEBUG=True
+   - Check Actions tab for full error logs
+   - Failed runs include complete stack traces
+
+### Reporting Bugs
+
+When reporting bugs, **ALWAYS include debug output:**
+
+1. Enable DEBUG mode: `DEBUG=True python your_script.py`
+2. Copy the FULL error output (including stack trace)
+3. Include:
+   - Python version: `python --version`
+   - PyTorch version: `python -c "import torch; print(torch.__version__)"`
+   - CUDA version (if using GPU): `python -c "import torch; print(torch.version.cuda)"`
+   - Operating system
+
+**See `.github/ISSUE_TEMPLATE/bug_report.md` for the full template.**
+
 ## API Reference
 
 ### SSM (State Space Model)
@@ -29,23 +113,27 @@ pip install torch numpy gymnasium
 **Class:** `core.ssm.SSM`
 
 **Constructor:**
+
 ```python
 SSM(state_dim: int, hidden_dim: int = 128, output_dim: int = 32, device: str = 'cpu')
 ```
 
 **Parameters:**
+
 - `state_dim` (int): Dimension of input state/observation space
 - `hidden_dim` (int, default=128): Hidden layer dimension for internal representations
 - `output_dim` (int, default=32): Dimension of output (e.g., action space)
 - `device` (str, default='cpu'): Device for computation - 'cpu' or 'cuda'
 
 **Methods:**
+
 - `forward(x, hidden_state=None)`: Forward pass through the model
   - `x` (Tensor): Input tensor of shape (batch_size, state_dim)
   - `hidden_state` (Tensor, optional): Previous hidden state
   - Returns: Single tensor output (output_dim)
 
 **Example:**
+
 ```python
 from core.ssm import SSM
 import torch
@@ -62,18 +150,18 @@ assert output.shape == (32, 32)  # (batch_size, output_dim)
 output = model.forward(state, hidden_state=None)
 ```
 
----
-
 ### MetaMAML
 
 **Class:** `meta_rl.meta_maml.MetaMAML`
 
 **Constructor:**
+
 ```python
 MetaMAML(model: nn.Module, inner_lr: float, outer_lr: float, first_order: bool = False)
 ```
 
 **Parameters:**
+
 - `model` (nn.Module): Base model to meta-train (e.g., SSM)
 - `inner_lr` (float): Learning rate for inner loop adaptation
 - `outer_lr` (float): Learning rate for outer loop meta-update
@@ -102,6 +190,7 @@ MetaMAML(model: nn.Module, inner_lr: float, outer_lr: float, first_order: bool =
    - **Returns:** Meta-loss (float)
 
 **Example:**
+
 ```python
 from meta_rl.meta_maml import MetaMAML
 from core.ssm import SSM
@@ -119,7 +208,6 @@ support_x = torch.randn(10, 4)
 support_y = torch.randn(10, 1)
 query_x = torch.randn(10, 4)
 query_y = torch.randn(10, 1)
-
 loss_fn = nn.MSELoss()
 
 # Adapt to single task
@@ -130,8 +218,6 @@ tasks = [(support_x, support_y, query_x, query_y) for _ in range(8)]
 meta_loss = meta_learner.meta_update(tasks, loss_fn)
 ```
 
----
-
 ### Test-Time Adaptation
 
 **Class:** `adaptation.test_time_adaptation.Adapter`
@@ -139,23 +225,26 @@ meta_loss = meta_learner.meta_update(tasks, loss_fn)
 **Config Class:** `adaptation.test_time_adaptation.AdaptationConfig`
 
 **AdaptationConfig Fields:**
+
 ```python
 AdaptationConfig(
-    lr: float,                    # Learning rate for adaptation
-    grad_clip_norm: float,        # Gradient clipping norm
-    trust_region_eps: float,      # Trust region epsilon for parameter updates
-    ema_decay: float,             # EMA decay rate for statistics
-    entropy_weight: float,        # Weight for entropy regularization
-    max_steps_per_call: int       # Maximum adaptation steps per call
+    lr: float,  # Learning rate for adaptation
+    grad_clip_norm: float,  # Gradient clipping norm
+    trust_region_eps: float,  # Trust region epsilon for parameter updates
+    ema_decay: float,  # EMA decay rate for statistics
+    entropy_weight: float,  # Weight for entropy regularization
+    max_steps_per_call: int  # Maximum adaptation steps per call
 )
 ```
 
 **Adapter Constructor:**
+
 ```python
 Adapter(model: nn.Module, cfg: AdaptationConfig)
 ```
 
 **Parameters:**
+
 - `model` (nn.Module): Model to adapt (e.g., SSM)
 - `cfg` (AdaptationConfig): Adaptation configuration
 
@@ -169,6 +258,7 @@ Adapter(model: nn.Module, cfg: AdaptationConfig)
   - **Returns:** Adaptation loss (float)
 
 **Example:**
+
 ```python
 from adaptation.test_time_adaptation import Adapter, AdaptationConfig
 from core.ssm import SSM
@@ -195,15 +285,12 @@ adapter = Adapter(model, config)
 states = torch.randn(16, 4)
 targets = torch.randn(16, 1)
 batch_dict = {'states': states, 'targets': targets}
-
 loss_fn = nn.MSELoss()
 
 # Perform adaptation
 loss = adapter.adapt(loss_fn, batch_dict)
 print(f"Adaptation loss: {loss:.4f}")
 ```
-
----
 
 ## Usage Example (main.py)
 
@@ -241,14 +328,11 @@ config = AdaptationConfig(
     entropy_weight=0.01,
     max_steps_per_call=5
 )
-
 adapter = Adapter(model, config)
-
 batch_dict = {
     'states': torch.randn(16, 4),
     'targets': torch.randn(16, 1)
 }
-
 adapt_loss = adapter.adapt(loss_fn, batch_dict)
 ```
 
