@@ -1,78 +1,153 @@
 #!/usr/bin/env python3
-"""Test file for core SSM module."""
-print("="*50)
-print("TEST: core/test_ssm.py")
-print("="*50)
+"""Test file for core SSM module using pytest assertions."""
 
-try:
-    # Import SSM components from correct module path
-    print("\n[1/4] Importing SSM from core.ssm...")
+import pytest
+import torch
+import tempfile
+import os
+from core.ssm import SSM
+
+
+def test_ssm_import():
+    """Test that SSM can be imported successfully."""
     from core.ssm import SSM
-    print("✓ Import successful")
-    
-    # Initialize SSM with PyTorch
-    print("\n[2/4] Initializing SSM with PyTorch...")
-    import torch
-    
+    assert SSM is not None
+
+
+def test_ssm_initialization():
+    """Test SSM initialization with correct parameters."""
     ssm = SSM(
         state_dim=64,
         hidden_dim=128,
         output_dim=32
     )
-    print(f"✓ SSM initialized with state_dim=64, hidden_dim=128, output_dim=32")
-    print(f"  Model type: {type(ssm).__name__}")
-    print(f"  Is nn.Module: {isinstance(ssm, torch.nn.Module)}")
     
-    # Run reset smoke test
-    print("\n[3/4] Running reset smoke test...")
+    # Verify SSM is a PyTorch module
+    assert isinstance(ssm, torch.nn.Module)
+    assert type(ssm).__name__ == 'SSM'
+
+
+def test_ssm_reset():
+    """Test SSM reset functionality."""
+    ssm = SSM(
+        state_dim=64,
+        hidden_dim=128,
+        output_dim=32
+    )
+    
     state = ssm.reset()
-    print(f"✓ Reset successful, state shape: {state.shape}")
-    print(f"  State type: {type(state).__name__}")
-    print(f"  Is torch.Tensor: {isinstance(state, torch.Tensor)}")
     
-    # Run forward smoke test with PyTorch tensor
-    print("\n[4/4] Running forward smoke test...")
-    dummy_input = torch.randn(1, 64)  # batch_size=1, state_dim=64
+    # Verify state is a torch tensor
+    assert isinstance(state, torch.Tensor)
+    # Verify state has correct shape (hidden_dim,)
+    assert state.shape == (128,)
+
+
+def test_ssm_forward():
+    """Test SSM forward pass."""
+    ssm = SSM(
+        state_dim=64,
+        hidden_dim=128,
+        output_dim=32
+    )
+    
+    # Create dummy input: batch_size=1, state_dim=64
+    dummy_input = torch.randn(1, 64)
     output = ssm(dummy_input)
-    print(f"✓ Forward pass successful, output shape: {output.shape}")
-    print(f"  Expected shape: (1, 32)")
     
-    # Test parameter saving/loading
-    print("\n[5/4] Testing save/load functionality...")
-    import tempfile
-    import os
+    # Verify output shape is correct
+    assert output.shape == (1, 32)
+    # Verify output is a torch tensor
+    assert isinstance(output, torch.Tensor)
+
+
+def test_ssm_forward_batch():
+    """Test SSM forward pass with batched input."""
+    ssm = SSM(
+        state_dim=64,
+        hidden_dim=128,
+        output_dim=32
+    )
     
+    # Test with larger batch size
+    batch_size = 8
+    dummy_input = torch.randn(batch_size, 64)
+    output = ssm(dummy_input)
+    
+    # Verify output shape matches batch size
+    assert output.shape == (batch_size, 32)
+
+
+def test_ssm_save_load():
+    """Test SSM state dict save and load functionality."""
+    # Create and initialize first model
+    ssm = SSM(state_dim=64, hidden_dim=128, output_dim=32)
+    dummy_input = torch.randn(1, 64)
+    output1 = ssm(dummy_input)
+    
+    # Save model parameters
     with tempfile.NamedTemporaryFile(delete=False, suffix='.pt') as f:
         temp_path = f.name
     
     try:
-        # Save
         torch.save(ssm.state_dict(), temp_path)
-        print(f"✓ Saved model parameters to {temp_path}")
+        assert os.path.exists(temp_path)
         
-        # Load
+        # Load into new model
         new_ssm = SSM(state_dim=64, hidden_dim=128, output_dim=32)
         new_ssm.load_state_dict(torch.load(temp_path))
-        print(f"✓ Loaded model parameters successfully")
         
-        # Verify outputs match
+        # Verify loaded model produces identical output
         output2 = new_ssm(dummy_input)
-        if torch.allclose(output, output2):
-            print("✓ Loaded model produces identical output")
-        else:
-            print("✗ Warning: Loaded model output differs")
+        assert torch.allclose(output1, output2)
     finally:
         if os.path.exists(temp_path):
             os.remove(temp_path)
+
+
+def test_ssm_different_dimensions():
+    """Test SSM with different dimension configurations."""
+    # Test different configurations
+    configs = [
+        (32, 64, 16),
+        (128, 256, 64),
+        (16, 32, 8),
+    ]
     
-    print("\n" + "="*50)
-    print("✓ ALL TESTS PASSED!")
-    print("="*50)
+    for state_dim, hidden_dim, output_dim in configs:
+        ssm = SSM(
+            state_dim=state_dim,
+            hidden_dim=hidden_dim,
+            output_dim=output_dim
+        )
+        
+        # Test forward pass
+        dummy_input = torch.randn(1, state_dim)
+        output = ssm(dummy_input)
+        
+        # Verify output shape
+        assert output.shape == (1, output_dim)
+        
+        # Test reset
+        state = ssm.reset()
+        assert state.shape == (hidden_dim,)
+
+
+def test_ssm_gradient_flow():
+    """Test that gradients flow through SSM correctly."""
+    ssm = SSM(state_dim=64, hidden_dim=128, output_dim=32)
     
-except ImportError as e:
-    print(f"\n✗ Import Error: {e}")
-    print("  Make sure core/ssm.py exists and has SSM class")
-except Exception as e:
-    print(f"\n✗ Test Failed: {e}")
-    import traceback
-    traceback.print_exc()
+    dummy_input = torch.randn(1, 64, requires_grad=True)
+    output = ssm(dummy_input)
+    
+    # Compute a simple loss and backpropagate
+    loss = output.sum()
+    loss.backward()
+    
+    # Verify gradients exist for input
+    assert dummy_input.grad is not None
+    assert dummy_input.grad.shape == dummy_input.shape
+    
+    # Verify at least some parameters have gradients
+    has_grad = any(p.grad is not None for p in ssm.parameters())
+    assert has_grad
