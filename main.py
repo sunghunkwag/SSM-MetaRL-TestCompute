@@ -1,27 +1,23 @@
 #!/usr/bin/env python3
 """
-SSM-MetaRL-TestCompute: Unified pipeline for SSM-based Meta-RL with test-time adaptation
-
-- core/ssm.py (SSM policy)
-- meta_rl/meta_maml.py (Meta-RL training)
-- env_runner/environment.py (environment batching)
-- adaptation/test_time_adaptation.py (test-time adaptation)
-- Optional improvements via real_agi_continuous_improvement.py when --improve flag is used
+SSM-MetaRL-TestCompute (PyTorch): Unified pipeline for SSM-based Meta-RL with test-time adaptation
+- models/ssm.py (SSM policy, nn.Module)
+- meta/maml.py (Meta-MAML trainer)
+- envs/vector_env.py (vectorized env wrapper)
+- adaptation/tta.py (test-time adaptation utilities)
 
 Usage:
   python main.py train --config basic --outer-steps 100 [--improve attention nas bn recursive]
-  python main.py eval --checkpoint checkpoints/latest.npz --episodes 20 [--improve ...]
-  python main.py adapt --checkpoint checkpoints/latest.npz --adapt-steps 10 [--improve ...]
+  python main.py eval --checkpoint checkpoints/latest.pt --episodes 20 [--improve ...]
+  python main.py adapt --checkpoint checkpoints/latest.pt --adapt-steps 10 [--improve ...]
 """
 from __future__ import annotations
-
 import argparse
 import os
 import sys
 import time
 import warnings
-from dataclasses import dataclass, field
-from typing import Dict, Any, List, Optional
+from typing import Any, Dict, Optional
 
 # ----------------------
 # Pre-run system checks
@@ -29,334 +25,229 @@ from typing import Dict, Any, List, Optional
 MIN_PY = (3, 9)
 
 def _check_prereqs() -> None:
-    py_ok = sys.version_info >= MIN_PY
-    if not py_ok:
+    if sys.version_info < MIN_PY:
         warnings.warn(
-            f"Python {MIN_PY[0]}.{MIN_PY[1]}+ recommended. Current: {sys.version.split()[0]}.")
-    # numpy required, torch optional but recommended
-    try:
-        import numpy as _np  # noqa: F401
-    except Exception:
-        print("[Prereq] numpy not found. Install: pip install numpy")
-        sys.exit(1)
+            f"Python {MIN_PY[0]}.{MIN_PY[1]}+ recommended. Current: {sys.version.split()[0]}."
+        )
     try:
         import torch  # noqa: F401
         os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
     except Exception:
-        warnings.warn("PyTorch not found. Some features may be disabled. Install: pip install torch --index-url https://download.pytorch.org/whl/cpu")
+        warnings.warn(
+            "PyTorch not found. Install: pip install torch --index-url https://download.pytorch.org/whl/cpu"
+        )
 
 _check_prereqs()
 
-import numpy as np
+import torch
 
 # ----------------------
-# Import repo modules with validation/repair hints
+# Repo imports (PyTorch versions)
 # ----------------------
-MISSING_HINT = (
-    "Ensure these files exist with correct paths: "
-    "core/ssm.py, meta_rl/meta_maml.py, env_runner/environment.py, adaptation/test_time_adaptation.py"
-)
-
 try:
-    from core.ssm import SSM, SSMConfig
+    from models.ssm import SSMPolicy  # nn.Module implementing policy with forward/act
 except Exception as e:
-    print(f"[Import] Failed to import core.ssm: {e}\n{MISSING_HINT}")
-    raise
+    raise ImportError("models/ssm.py must define SSMPolicy(nn.Module)") from e
 
 try:
-    from meta_rl.meta_maml import MetaLearner, MetaConfig
+    from meta.maml import MetaMAML  # meta-learner with train_step/eval_on_tasks
 except Exception as e:
-    print(f"[Import] Failed to import meta_rl.meta_maml: {e}\n{MISSING_HINT}")
-    raise
+    raise ImportError("meta/maml.py must expose MetaMAML") from e
 
 try:
-    from env_runner.environment import EnvBatch, EnvConfig
+    from envs.vector_env import make_vector_env  # returns vectorized env compatible with torch
 except Exception as e:
-    print(f"[Import] Failed to import env_runner.environment: {e}\n{MISSING_HINT}")
-    raise
+    raise ImportError("envs/vector_env.py must expose make_vector_env") from e
 
 try:
-    from adaptation.test_time_adaptation import TestTimeAdapter, AdaptConfig
+    from adaptation.tta import TTAdapter  # test-time adapter for online/episodic adaptation
 except Exception as e:
-    print(f"[Import] Failed to import adaptation.test_time_adaptation: {e}\n{MISSING_HINT}")
-    raise
+    raise ImportError("adaptation/tta.py must expose TTAdapter") from e
 
-# ----------------------
-# Optional external improvement module (secured)
-# ----------------------
-IMPROVE_MODULE = None
-IMPROVE_AVAILABLE = False
-VALID_IMPROVE_TAGS = (
-    "attention", "attn", "nas", "search", "bn", "batch_norm",
-    "recursive", "recursion", "logger", "ckpt_select", "checkpoint",
-)
-IMPROVE_WHITELIST = {
-    "inject_attention",
-    "neural_architecture_search",
-    "enable_batch_norm",
-    "enable_recursive_policies",
-    "attach_performance_logger",
-    "select_best_checkpoint",
-}
-try:
-    import importlib
-    IMPROVE_MODULE = importlib.import_module('real_agi_continuous_improvement')
-    # Whitelist enforcement: only allow expected attributes
-    for attr in list(vars(IMPROVE_MODULE)):
-        if attr.startswith("__"):
+# Optional improvements registry
+VALID_IMPROVE_TAGS = {"attention", "nas", "bn", "recursive"}
+
+def apply_improvements(policy: SSMPolicy, tags: Optional[list[str]]) -> SSMPolicy:
+    if not tags:
+        return policy
+    for tag in tags:
+        if tag not in VALID_IMPROVE_TAGS:
+            warnings.warn(f"Unknown improvement tag: {tag}")
             continue
-        if attr not in IMPROVE_WHITELIST:
-            try:
-                delattr(IMPROVE_MODULE, attr)
-            except Exception:
-                pass
-    IMPROVE_AVAILABLE = True
-except Exception as e:
-    warnings.warn(f"[Improve] Optional module not available: {e}")
+        # Hook points for optional modules; assume policy exposes enable_* methods
+        if tag == "attention" and hasattr(policy, "enable_attention"):
+            policy.enable_attention()
+        elif tag == "bn" and hasattr(policy, "enable_batchnorm"):
+            policy.enable_batchnorm()
+        elif tag == "nas" and hasattr(policy, "apply_nas"):
+            policy.apply_nas()
+        elif tag == "recursive" and hasattr(policy, "enable_recursive"):
+            policy.enable_recursive()
+    return policy
 
 # ----------------------
-# Experiment configuration
+# Config helpers (dict-based)
 # ----------------------
-@dataclass
-class ExperimentConfig:
-    """Top-level configuration for experiments"""
-    seed: int = 0
-    env_name: str = "MetaGymToy-v0"
-    num_envs: int = 8
-    time_limit: int = 200
-    ssm: SSMConfig = field(default_factory=SSMConfig)
-    meta: MetaConfig = field(default_factory=MetaConfig)
-    adapt: AdaptConfig = field(default_factory=AdaptConfig)
-    log_dir: str = "runs"
-    ckpt_dir: str = "checkpoints"
-    improve: List[str] = field(default_factory=list)
-
-# Built-in example configs
-EXAMPLE_CONFIGS = {
-    "basic": ExperimentConfig(
-        seed=42,
-        env_name="MetaGymToy-v0",
-        num_envs=8,
-        time_limit=200,
-        meta=MetaConfig(outer_steps=50, tasks_per_batch=8, inner_steps=1, inner_lr=1e-2),
-        adapt=AdaptConfig(steps=5, lr=1e-2),
-    ),
+EXAMPLE_CONFIGS: Dict[str, Dict[str, Any]] = {
+    "basic": {
+        "env_id": "CartPole-v1",
+        "num_envs": 8,
+        "device": "cuda" if torch.cuda.is_available() else ("mps" if torch.backends.mps.is_available() else "cpu"),
+        "seed": 42,
+        "inner_steps": 5,
+        "outer_steps": 100,
+        "tasks_per_batch": 4,
+        "time_limit": 500,
+        "lr": 3e-4,
+        "ckpt_dir": "checkpoints",
+    },
 }
 
 # ----------------------
-# Utilities
+# Checkpoint utils (torch-only)
 # ----------------------
 
-def set_seed(seed: int):
-    np.random.seed(seed)
+def save_checkpoint(path: str, policy: SSMPolicy, extra: Optional[Dict[str, Any]] = None) -> None:
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    payload = {"policy": policy.state_dict(), "meta": extra or {}, "ts": time.time()}
+    torch.save(payload, path)
 
 
-def ensure_dirs(*paths):
-    for p in paths:
-        if p:
-            os.makedirs(p, exist_ok=True)
-
-
-def save_checkpoint(path: str, params: Dict[str, np.ndarray]):
-    """Save parameters as NumPy .npz (keys->arrays). Avoid pickles; portable.
-    Limitations: arrays only; dtype/shape must match on load; size ~sum of arrays.
-    """
-    ensure_dirs(os.path.dirname(path))
-    np.savez(path, **params)
-    print(f"Checkpoint saved: {path}")
-
-
-def load_checkpoint(path: str) -> Dict[str, np.ndarray]:
-    """Load parameters from .npz created by save_checkpoint."""
-    with np.load(path, allow_pickle=False) as f:
-        return {k: f[k] for k in f.files}
+def load_checkpoint(path: str, device: str) -> Dict[str, Any]:
+    payload = torch.load(path, map_location=device)
+    if not isinstance(payload, dict) or "policy" not in payload:
+        raise RuntimeError("Invalid checkpoint format: missing 'policy'")
+    return payload
 
 # ----------------------
-# Component builders
+# Core workflows
 # ----------------------
 
-def build_env(cfg: ExperimentConfig) -> EnvBatch:
-    env_cfg = EnvConfig(env_name=cfg.env_name, num_envs=cfg.num_envs, time_limit=cfg.time_limit, seed=cfg.seed)
-    return EnvBatch(env_cfg)
+def build_policy(obs_space: Any, act_space: Any, device: str, cfg: Dict[str, Any]) -> SSMPolicy:
+    policy = SSMPolicy(obs_space, act_space, lr=cfg.get("lr", 3e-4), device=device)
+    return policy.to(device)
 
 
-def build_policy(cfg: ExperimentConfig) -> SSM:
-    return SSM(cfg.ssm)
+def run_train(cfg: Dict[str, Any], args: argparse.Namespace) -> Dict[str, Any]:
+    device = cfg["device"]
+    envs = make_vector_env(cfg["env_id"], num_envs=cfg["num_envs"], seed=args.seed or cfg.get("seed", 0), device=device)
+    obs_space, act_space = envs.observation_space, envs.action_space
+
+    policy = build_policy(obs_space, act_space, device, cfg)
+    policy = apply_improvements(policy, args.improve)
+
+    meta = MetaMAML(policy=policy, inner_steps=cfg["inner_steps"], tasks_per_batch=args.tasks_per_batch or cfg["tasks_per_batch"], device=device)
+
+    outer_steps = args.outer_steps or cfg["outer_steps"]
+    best_ret = -float("inf")
+    ckpt_dir = args.ckpt_dir or cfg.get("ckpt_dir", "checkpoints")
+    os.makedirs(ckpt_dir, exist_ok=True)
+    for step in range(outer_steps):
+        metrics = meta.train_step(envs)
+        mean_ret = float(metrics.get("mean_return", 0.0))
+        if mean_ret > best_ret:
+            best_ret = mean_ret
+            save_checkpoint(os.path.join(ckpt_dir, "best.pt"), policy, {"step": step, "metrics": metrics})
+        if (step + 1) % 10 == 0:
+            save_checkpoint(os.path.join(ckpt_dir, "latest.pt"), policy, {"step": step, "metrics": metrics})
+        print(f"[Train] step={step} metrics={metrics}")
+
+    # final save
+    save_checkpoint(os.path.join(ckpt_dir, "final.pt"), policy, {"step": outer_steps})
+    return {"best_return": best_ret, "ckpt_dir": ckpt_dir}
 
 
-def build_meta_learner(cfg: ExperimentConfig) -> MetaLearner:
-    return MetaLearner(cfg.meta)
+def run_eval(cfg: Dict[str, Any], args: argparse.Namespace) -> Dict[str, Any]:
+    device = cfg["device"]
+    envs = make_vector_env(cfg["env_id"], num_envs=cfg["num_envs"], seed=cfg.get("seed", 0), device=device, eval_mode=True)
+    obs_space, act_space = envs.observation_space, envs.action_space
 
+    policy = build_policy(obs_space, act_space, device, cfg)
+    checkpoint = load_checkpoint(args.checkpoint, device)
+    policy.load_state_dict(checkpoint["policy"])
+    policy.eval()
 
-def build_adapter(cfg: ExperimentConfig) -> TestTimeAdapter:
-    return TestTimeAdapter(cfg.adapt)
-
-# ----------------------
-# Improvement application
-# ----------------------
-
-def _warn_unknown_improve_tags(tags: List[str]) -> List[str]:
-    unknown = [t for t in tags if t not in VALID_IMPROVE_TAGS]
-    if unknown:
-        warnings.warn(f"Unknown --improve tags: {unknown}. Valid: {sorted(set(VALID_IMPROVE_TAGS))}")
-    return [t for t in tags if t in VALID_IMPROVE_TAGS]
-
-
-def apply_improvements(stage: str, cfg: ExperimentConfig, policy: SSM, meta: Optional[MetaLearner] = None):
-    """Apply selected improvements safely. stage in {'post_meta','pre_adapt'}."""
-    if not cfg.improve:
-        return
-    if not IMPROVE_AVAILABLE:
-        warnings.warn("[Improve] Module not available; skipping improvements.")
-        return
-    cfg.improve = _warn_unknown_improve_tags(cfg.improve)
-    if not cfg.improve:
-        return
-    print(f"[Improve] Applying improvements at {stage}: {cfg.improve}")
-    for tag in cfg.improve:
-        try:
-            if tag in ("attention", "attn") and hasattr(IMPROVE_MODULE, 'inject_attention'):
-                IMPROVE_MODULE.inject_attention(policy)
-            elif tag in ("nas", "search") and hasattr(IMPROVE_MODULE, 'neural_architecture_search'):
-                new_arch = IMPROVE_MODULE.neural_architecture_search(policy, budget=getattr(cfg, 'nas_budget', 10))
-                if hasattr(policy, 'reconfigure') and new_arch is not None:
-                    policy.reconfigure(new_arch)
-            elif tag in ("bn", "batch_norm") and hasattr(IMPROVE_MODULE, 'enable_batch_norm'):
-                IMPROVE_MODULE.enable_batch_norm(policy)
-            elif tag in ("recursive", "recursion") and hasattr(IMPROVE_MODULE, 'enable_recursive_policies'):
-                IMPROVE_MODULE.enable_recursive_policies(policy)
-            elif tag in ("logger",) and hasattr(IMPROVE_MODULE, 'attach_performance_logger'):
-                IMPROVE_MODULE.attach_performance_logger(policy, stage=stage)
-            elif tag in ("ckpt_select", "checkpoint") and hasattr(IMPROVE_MODULE, 'select_best_checkpoint'):
-                pass
-        except Exception as e:
-            warnings.warn(f"[Improve] Skipped {tag} due to error: {e}")
-
-# ----------------------
-# Training / Evaluation
-# ----------------------
-
-def train(cfg: ExperimentConfig):
-    set_seed(cfg.seed)
-    ensure_dirs(cfg.log_dir, cfg.ckpt_dir)
-    envs = build_env(cfg)
-    policy = build_policy(cfg)
-    meta = build_meta_learner(cfg)
-    params = policy.init_parameters(seed=cfg.seed)
-    print("[Train] Starting meta-learning...")
-    best_metric = -np.inf
-    start = time.time()
-    for step in range(cfg.meta.outer_steps):
-        tasks = envs.sample_tasks(cfg.meta.tasks_per_batch)
-        params, metrics = meta.outer_step(policy_class=SSM, init_params=params, tasks=tasks, ssm_cfg=cfg.ssm)
-        try:
-            if IMPROVE_AVAILABLE and hasattr(IMPROVE_MODULE, 'log_training_metrics'):
-                IMPROVE_MODULE.log_training_metrics(step=step, metrics=metrics)
-        except Exception as e:
-            warnings.warn(f"[Improve] log_training_metrics error: {e}")
-        if (step + 1) % 10 == 0 or step == 0:
-            ckpt_path = os.path.join(cfg.ckpt_dir, f"step_{step+1}.npz")
-            save_checkpoint(ckpt_path, params)
-            print(f"[Train] step={step+1}/{cfg.meta.outer_steps} metrics={metrics}")
-        mean_ret = float(metrics.get('mean_return', -np.inf)) if isinstance(metrics, dict) else -np.inf
-        if mean_ret > best_metric:
-            best_metric = mean_ret
-            best_ckpt_path = os.path.join(cfg.ckpt_dir, f"best_step_{step+1}.npz")
-            save_checkpoint(best_ckpt_path, params)
-    policy.set_parameters(params)
-    apply_improvements(stage='post_meta', cfg=cfg, policy=policy, meta=meta)
-    latest = os.path.join(cfg.ckpt_dir, "latest.npz")
-    save_checkpoint(latest, policy.get_parameters() if hasattr(policy, 'get_parameters') else params)
-    try:
-        if IMPROVE_AVAILABLE and hasattr(IMPROVE_MODULE, 'select_best_checkpoint'):
-            chosen = IMPROVE_MODULE.select_best_checkpoint(cfg.ckpt_dir)
-            if chosen:
-                print(f"[Improve] Selected best checkpoint: {chosen}")
-    except Exception as e:
-        warnings.warn(f"[Improve] select_best_checkpoint error: {e}")
-    print(f"[Train] Complete in {time.time()-start:.1f}s")
-    return policy.get_parameters() if hasattr(policy, 'get_parameters') else params
-
-
-def evaluate(cfg: ExperimentConfig, params: Dict[str, np.ndarray], episodes: int = 10):
-    set_seed(cfg.seed)
-    envs = build_env(cfg)
-    policy = build_policy(cfg)
-    policy.set_parameters(params)
-    apply_improvements(stage='pre_adapt', cfg=cfg, policy=policy)
-    print(f"[Eval] Running {episodes} episodes...")
-    returns: List[float] = []
-    for _ in range(episodes):
+    returns = []
+    episodes = int(args.episodes or 20)
+    with torch.no_grad():
         obs = envs.reset()
-        policy.reset()
-        ep_ret = np.zeros(cfg.num_envs)
-        for _ in range(cfg.time_limit):
+        ep_ret = torch.zeros(cfg["num_envs"], device=device, dtype=torch.float32)
+        for _ in range(cfg.get("time_limit", 500)):
             actions = policy.act(obs)
             obs, rew, done, _ = envs.step(actions)
             ep_ret += rew
             if done.all():
-                break
-        returns.extend(ep_ret.tolist())
-    metrics = {"mean_return": float(np.mean(returns)), "std_return": float(np.std(returns))}
+                returns.extend(ep_ret.detach().cpu().tolist())
+                obs = envs.reset()
+                ep_ret.zero_()
+                if len(returns) >= episodes:
+                    break
+    metrics = {"mean_return": float(torch.tensor(returns).mean().item()) if len(returns) else 0.0,
+               "std_return": float(torch.tensor(returns).std(unbiased=False).item()) if len(returns) else 0.0}
     print(f"[Eval] Results: {metrics}")
     return metrics
 
 
-def evaluate_with_adaptation(cfg: ExperimentConfig, params: Dict[str, np.ndarray], episodes: int = 10):
-    set_seed(cfg.seed)
-    envs = build_env(cfg)
-    adapter = build_adapter(cfg)
-    print(f"[Adapt] Running {episodes} episodes with adaptation...")
-    returns: List[float] = []
-    for _ in range(episodes):
-        obs = envs.reset()
-        ep_params = dict(params)
-        policy = build_policy(cfg)
-        policy.set_parameters(ep_params)
-        policy.reset()
-        apply_improvements(stage='pre_adapt', cfg=cfg, policy=policy)
-        if cfg.adapt.steps > 0:
-            ep_params = adapter.adapt(policy, envs, steps=cfg.adapt.steps)
-            policy.set_parameters(ep_params)
-        ep_ret = np.zeros(cfg.num_envs)
-        for _ in range(cfg.time_limit):
+def run_adapt(cfg: Dict[str, Any], args: argparse.Namespace) -> Dict[str, Any]:
+    device = cfg["device"]
+    envs = make_vector_env(cfg["env_id"], num_envs=cfg["num_envs"], seed=cfg.get("seed", 0), device=device)
+    obs_space, act_space = envs.observation_space, envs.action_space
+
+    policy = build_policy(obs_space, act_space, device, cfg)
+    checkpoint = load_checkpoint(args.checkpoint, device)
+    policy.load_state_dict(checkpoint["policy"])
+    policy = apply_improvements(policy, args.improve)
+    policy.train()
+
+    adapter = TTAdapter(policy=policy, steps=int(args.adapt_steps or 10), device=device)
+
+    returns = []
+    obs = envs.reset()
+    ep_params = None
+    for _ep in range(int(args.episodes or 20)):
+        if adapter.steps > 0:
+            ep_params = adapter.adapt(policy, envs)
+            if ep_params is not None:
+                policy.load_state_dict(ep_params, strict=False)
+        ep_ret = torch.zeros(cfg["num_envs"], device=device, dtype=torch.float32)
+        for _ in range(cfg.get("time_limit", 500)):
             actions = policy.act(obs)
             obs, rew, done, _ = envs.step(actions)
             ep_ret += rew
-            if getattr(cfg.adapt, 'online', False):
+            if getattr(args, "online", False):
                 ep_params = adapter.online_step(policy, obs, rew)
-                policy.set_parameters(ep_params)
+                if ep_params is not None:
+                    policy.load_state_dict(ep_params, strict=False)
             if done.all():
                 break
-        returns.extend(ep_ret.tolist())
-    metrics = {"mean_return": float(np.mean(returns)), "std_return": float(np.std(returns))}
+        returns.extend(ep_ret.detach().cpu().tolist())
+    t = torch.tensor(returns)
+    metrics = {"mean_return": float(t.mean().item()) if t.numel() else 0.0,
+               "std_return": float(t.std(unbiased=False).item()) if t.numel() else 0.0}
     print(f"[Adapt] Results: {metrics}")
     return metrics
 
+# ----------------------
+# CLI
+# ----------------------
 
-def build_parser():
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="SSM-MetaRL-TestCompute: Unified pipeline for SSM-based Meta-RL with test-time adaptation",
+        description="SSM-MetaRL-TestCompute (PyTorch): Unified pipeline for SSM-based Meta-RL with test-time adaptation",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "Examples:\n"
-            "  # Train with basic config and improvements\n"
             "  python main.py train --config basic --outer-steps 100 --improve attention nas bn recursive\n"
-            "  # Evaluate trained checkpoint with improvements\n"
-            "  python main.py eval --checkpoint checkpoints/latest.npz --episodes 20 --improve attention\n"
-            "  # Evaluate with test-time adaptation and improvements\n"
-            "  python main.py adapt --checkpoint checkpoints/latest.npz --episodes 20 --adapt-steps 10 --improve bn\n"
+            "  python main.py eval --checkpoint checkpoints/latest.pt --episodes 20 --improve attention\n"
+            "  python main.py adapt --checkpoint checkpoints/latest.pt --episodes 20 --adapt-steps 10 --improve bn\n"
         ),
     )
     subparsers = parser.add_subparsers(dest="mode", help="Operation mode", required=True)
 
-    def add_improve_args(p):
+    def add_improve_args(p: argparse.ArgumentParser) -> None:
         p.add_argument(
-            "--improve",
-            nargs='*',
-            default=None,
-            metavar='TAG',
-            help=("Optional improvement tags to apply: " + ", ".join(sorted(set(VALID_IMPROVE_TAGS)))),
+            "--improve", nargs='*', default=None, metavar='TAG',
+            help=("Optional improvement tags to apply: " + ", ".join(sorted(VALID_IMPROVE_TAGS)))
         )
 
     train_parser = subparsers.add_parser("train", help="Train meta-initialization via meta-learning")
@@ -368,6 +259,48 @@ def build_parser():
     add_improve_args(train_parser)
 
     eval_parser = subparsers.add_parser("eval", help="Evaluate policy without adaptation")
-    eval_parser.add_argument("--checkpoint", required=True, help="Path to checkpoint .npz file")
+    eval_parser.add_argument("--checkpoint", required=True, help="Path to checkpoint .pt file")
     eval_parser.add_argument("--config", default="basic", choices=list(EXAMPLE_CONFIGS.keys()), help="Experiment config")
-    eval
+    eval_parser.add_argument("--episodes", type=int, default=20, help="Number of evaluation episodes")
+    add_improve_args(eval_parser)
+
+    adapt_parser = subparsers.add_parser("adapt", help="Evaluate with test-time adaptation")
+    adapt_parser.add_argument("--checkpoint", required=True, help="Path to checkpoint .pt file")
+    adapt_parser.add_argument("--config", default="basic", choices=list(EXAMPLE_CONFIGS.keys()), help="Experiment config")
+    adapt_parser.add_argument("--episodes", type=int, default=20, help="Number of evaluation episodes")
+    adapt_parser.add_argument("--adapt-steps", type=int, default=10, help="Adaptation steps per episode")
+    adapt_parser.add_argument("--online", action="store_true", help="Enable online adaptation during rollout")
+    add_improve_args(adapt_parser)
+
+    return parser
+
+
+def main(argv: Optional[list[str]] = None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+
+    cfg = dict(EXAMPLE_CONFIGS[args.config])
+    if args.seed is not None:
+        cfg["seed"] = args.seed
+    if args.tasks_per_batch is not None:
+        cfg["tasks_per_batch"] = args.tasks_per_batch
+    if args.outer_steps is not None:
+        cfg["outer_steps"] = args.outer_steps
+    if getattr(args, "ckpt_dir", None):
+        cfg["ckpt_dir"] = args.ckpt_dir
+
+    os.makedirs(cfg.get("ckpt_dir", "checkpoints"), exist_ok=True)
+
+    if args.mode == "train":
+        run_train(cfg, args)
+    elif args.mode == "eval":
+        run_eval(cfg, args)
+    elif args.mode == "adapt":
+        run_adapt(cfg, args)
+    else:
+        parser.error(f"Unknown mode: {args.mode}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
