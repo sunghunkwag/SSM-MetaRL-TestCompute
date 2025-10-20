@@ -1,284 +1,114 @@
 # SSM-MetaRL-TestCompute
 
-![CI](https://github.com/sunghunkwag/SSM-MetaRL-TestCompute/actions/workflows/ci.yml/badge.svg)
+A minimal Python package for State Space Models (SSM) with Meta Reinforcement Learning and Test-Time Adaptation.
 
-A research implementation combining State Space Models (SSM) with Meta-Reinforcement Learning for fast task adaptation. This repo provides a unified training/eval/adaptation pipeline with optional improvement hooks.
+## Installation
 
-- Python: 3.9+
-- Required: numpy
-- Recommended: torch (CPU ok). The pipeline runs without torch but some modules may use it.
+### Install from GitHub
 
-## Repository structure
-
-- main.py: CLI entrypoint and orchestration
-- core/ssm.py: SSM policy and config
-- meta_rl/meta_maml.py: Meta-learner and config
-- env_runner/environment.py: Vectorized environment batch runner and config
-- adaptation/test_time_adaptation.py: Test-time adapter and config
-- experiments/quick_benchmark.py: Quick benchmark for reproducible testing
-- .github/workflows/ci.yml: CI/CD automation
-- tests: minimal smoke/unit tests (added below)
-
-## Quickstart
-
-- Install: pip install numpy [torch]
-- Train: python main.py train --config basic --outer-steps 100 --improve attention bn
-- Eval: python main.py eval --config basic --checkpoint checkpoints/latest.npz --episodes 10
-- Adapted eval: python main.py adapt --config basic --checkpoint checkpoints/latest.npz --episodes 10 --adapt-steps 5
-
-## CI/CD & Testing
-
-### Automated Testing
-
-This repository includes GitHub Actions CI that automatically:
-- Tests on Python 3.9, 3.10, and 3.11
-- Installs dependencies (numpy, torch optional)
-- Runs all `test_*.py` scripts
-
-The CI workflow runs on every push and pull request to the `main` branch.
-
-### Running Tests Locally
+You can install the package directly from this GitHub repository:
 
 ```bash
-# Run all tests
-python -m pytest -q  # if you have pytest installed
-
-# Or run individual test files
-python core/test_ssm.py
-python meta_rl/test_meta_rl.py
-python adaptation/test_adaptation.py
+pip install git+https://github.com/sunghunkwag/SSM-MetaRL-TestCompute.git
 ```
 
-## Quick Benchmark & Reproducible Experiments
+### Install for Development
 
-### Running the Quick Benchmark
-
-The `experiments/quick_benchmark.py` script provides a fast way to validate the training pipeline and compare performance with different configurations:
+For development, clone the repository and install in editable mode:
 
 ```bash
-python experiments/quick_benchmark.py
+git clone https://github.com/sunghunkwag/SSM-MetaRL-TestCompute.git
+cd SSM-MetaRL-TestCompute
+pip install -e .
 ```
 
-This benchmark:
-- Runs multiple experiment configurations (baseline, with improvements, larger batch)
-- Completes in under 2 minutes
-- Provides performance comparison and timing metrics
-- Validates the entire pipeline end-to-end
+### Build and Install from Wheel
 
-### Sample Output
-
-```
-╔═══════════════════════════════════════════════════════════╗
-║   SSM-MetaRL Quick Benchmark                            ║
-║   Testing pipeline & performance tuning                 ║
-╚═══════════════════════════════════════════════════════════╝
-
-============================================================
-Running: Baseline (minimal)
-============================================================
-Command: python main.py --steps 100 --batch_size 32 --lr 0.001
-✓ Completed in 28.45s
-
-============================================================
-Running: With improvements
-============================================================
-Command: python main.py --steps 100 --batch_size 32 --lr 0.001 --improve
-✓ Completed in 31.20s
-
-============================================================
-Running: Larger batch
-============================================================
-Command: python main.py --steps 100 --batch_size 64 --lr 0.001
-✓ Completed in 24.15s
-
-============================================================
-BENCHMARK SUMMARY
-============================================================
-
-Experiment                          Status     Time (s)
-------------------------------------------------------------
-Baseline (minimal)                  ✓ success     28.4
-With improvements                   ✓ success     31.2
-Larger batch                        ✓ success     24.1
-
-============================================================
-
-Performance Comparison:
-  With improvements vs Baseline (minimal):
-    Time difference: +2.75s (0.91x)
-  Larger batch vs Baseline (minimal):
-    Time difference: -4.30s (1.18x)
-
-💡 Performance Tuning Tips:
-   - Increase --batch_size for better GPU utilization
-   - Adjust --lr based on convergence speed
-   - Use --improve flag to enable optimizations
-   - Monitor GPU memory with nvidia-smi
-
-📊 For full experiments, increase --steps and --episodes
-
-✓ All benchmarks passed!
-```
-
-## Performance Tuning Tips
-
-### Batch Size Optimization
-
-- **Small batches (16-32)**: Lower memory usage, faster iteration, potentially noisier gradients
-- **Medium batches (64-128)**: Good balance for most GPUs, stable training
-- **Large batches (256+)**: Better GPU utilization, may require learning rate adjustment
-
-Recommendation: Start with batch size 64 and scale up until GPU memory is ~80% utilized.
-
-### Learning Rate Tuning
-
-- **Meta-learning**: Typically requires smaller outer learning rates (1e-3 to 1e-4)
-- **Inner adaptation**: Can use larger rates (1e-2) for fast adaptation
-- **With larger batches**: Consider scaling LR proportionally (e.g., batch size 2x → LR 2x)
-
-### Using the --improve Flag
-
-The `--improve` flag enables various optimizations:
+To build the package as a wheel:
 
 ```bash
-# Enable attention mechanism
-python main.py train --improve attention
-
-# Enable batch normalization
-python main.py train --improve bn
-
-# Combine multiple improvements
-python main.py train --improve attention bn logger
-
-# Neural architecture search
-python main.py train --improve nas
+pip install build
+python -m build
+pip install dist/ssm_metarl-0.1.0-py3-none-any.whl
 ```
 
-Available improvement tags:
-- `attention` / `attn`: Inject attention mechanisms
-- `nas` / `search`: Neural architecture search
-- `bn` / `batch_norm`: Enable batch normalization
-- `recursive` / `recursion`: Enable recursive policies
-- `logger`: Attach performance logging
-- `ckpt_select` / `checkpoint`: Select best checkpoint
+## Usage
 
-### GPU Monitoring
+### Import the Package
 
-```bash
-# Monitor GPU usage in real-time
-watch -n 1 nvidia-smi
-
-# Or check periodically during training
-nvidia-smi --query-gpu=utilization.gpu,memory.used,memory.total --format=csv
-```
-
-### Quick vs Full Experiments
-
-**Quick validation** (for CI/testing):
-```bash
-python experiments/quick_benchmark.py
-# or
-python main.py train --steps 100 --batch_size 32
-```
-
-**Full training** (for research):
-```bash
-python main.py train --config basic --outer-steps 5000 --batch_size 128 --improve attention bn
-```
-
-## CLI and improvements
-
-main.py adds:
-- Pre-run checks: Python>=3.9, numpy present, torch optional (warns if missing)
-- Safer import validation: clear hints if modules missing
-- --improve TAG [TAG ...]: unknown tags warn and are ignored; valid tags are listed
-
-Supported tags (if real_agi_continuous_improvement exposes the symbols):
-- attention/attn -> inject_attention(policy)
-- nas/search -> neural_architecture_search(policy, budget)
-- bn/batch_norm -> enable_batch_norm(policy)
-- recursive/recursion -> enable_recursive_policies(policy)
-- logger -> attach_performance_logger(policy, stage) and/or log_training_metrics(step, metrics)
-- ckpt_select/checkpoint -> select_best_checkpoint(ckpt_dir)
-
-Behavior:
-- The improvement module is optional; missing module just warns and continues
-- Each call is hasattr-guarded; per-tag failures are warned and skipped
-- A small default NAS budget is used unless cfg.nas_budget is provided
-
-## Module docs and examples
-
-### core/ssm.py
-
-- Class SSM(config: SSMConfig)
-  - init_parameters(seed:int)->Dict[str,np.ndarray]
-  - set_parameters(params:Dict[str,np.ndarray])->None
-  - get_parameters()->Dict[str,np.ndarray]
-  - reset()->None
-  - act(obs: np.ndarray)->np.ndarray
-- Dataclass SSMConfig: hyperparams for SSM
-
-Example usage:
 ```python
-from core.ssm import SSM, SSMConfig
-config = SSMConfig(state_dim=16, action_dim=4, obs_dim=10)
-policy = SSM(config)
-params = policy.init_parameters(seed=42)
-policy.set_parameters(params)
-policy.reset()
-action = policy.act(obs=np.random.randn(10))
+import core.ssm as ssm
+from meta_rl.meta_maml import MetaMAML
+from adaptation.test_time_adaptation import TestTimeAdapter
+from env_runner.environment import EnvironmentRunner
+
+# Initialize State Space Model
+config = ssm.SSMConfig(state_dim=10, obs_dim=5, action_dim=2)
+model = ssm.StateSpaceModel(config)
+
+# Initialize parameters
+params = model.init_parameters()
+
+# Reset and act
+state = model.reset(params)
+action = model.act(params, state, observation)
 ```
 
-### meta_rl/meta_maml.py
+### Example: Meta-Learning with MAML
 
-- Class MetaLearner(config: MetaConfig)
-  - outer_step(policy, tasks, inner_steps:int)->Dict[str,np.ndarray]
-  - compute_meta_gradient(policy, tasks, inner_steps:int)->Dict[str,np.ndarray]
-- Dataclass MetaConfig: meta_lr, inner_lr, etc.
-
-Example:
 ```python
-from meta_rl.meta_maml import MetaLearner, MetaConfig
-learner = MetaLearner(MetaConfig(meta_lr=1e-3, inner_lr=1e-2))
-tasks = [task1, task2, ...]
-updated_params = learner.outer_step(policy, tasks, inner_steps=5)
+from meta_rl.meta_maml import MetaMAML, MetaConfig
+
+# Configure meta-learning
+meta_config = MetaConfig(
+    inner_lr=0.01,
+    outer_lr=0.001,
+    num_inner_steps=5
+)
+
+meta_learner = MetaMAML(meta_config)
+
+# Train on multiple tasks
+meta_learner.train(tasks)
 ```
 
-### env_runner/environment.py
+### Example: Test-Time Adaptation
 
-- Class EnvBatch(config: EnvConfig)
-  - reset()->np.ndarray
-  - step(actions: np.ndarray)->(obs, rew, done, info)
-  - sample_tasks(n:int)->List[Task]
-- Dataclass EnvConfig: env_name, num_envs, time_limit, seed
-
-Example:
-```python
-from env_runner.environment import EnvBatch, EnvConfig
-envs = EnvBatch(EnvConfig(env_name="MetaGymToy-v0", num_envs=8, time_limit=200, seed=0))
-obs = envs.reset()
-obs, rew, done, info = envs.step(actions=np.zeros((8,)))
-```
-
-### adaptation/test_time_adaptation.py
-
-- Class TestTimeAdapter(config: AdaptConfig)
-  - adapt(policy, envs, steps:int)->Dict[str,np.ndarray]
-  - online_step(policy, obs, rew)->Dict[str,np.ndarray]
-- Dataclass AdaptConfig: steps, lr, online(optional bool)
-
-Example:
 ```python
 from adaptation.test_time_adaptation import TestTimeAdapter, AdaptConfig
-adapter = TestTimeAdapter(AdaptConfig(steps=5, lr=1e-2))
-new_params = adapter.adapt(policy, envs, steps=5)
+
+# Configure adaptation
+adapt_config = AdaptConfig(
+    adapt_lr=0.001,
+    adapt_steps=10
+)
+
+adapter = TestTimeAdapter(adapt_config)
+
+# Adapt policy at test time
+adapted_policy = adapter.adapt(policy, test_envs, steps=10)
 ```
 
-## Checkpoints
+## Package Structure
 
-- Format: NumPy .npz created by numpy.savez. Keys are parameter names; values are ndarrays.
-- Save: save_checkpoint(path, params)
-- Load: load_checkpoint(path)->Dict[str,np.ndarray]
+- `core/` - State Space Model (SSM) implementation
+  - `ssm.py` - Core SSM classes and configuration
+- `meta_rl/` - Meta Reinforcement Learning algorithms
+  - `meta_maml.py` - MAML implementation for meta-learning
+- `adaptation/` - Test-time adaptation strategies
+  - `test_time_adaptation.py` - Online adaptation algorithms
+- `env_runner/` - Environment runner utilities
+  - `environment.py` - Environment interface and batch processing
+
+## Features
+
+- **State Space Models**: Efficient SSM implementation for sequential decision making
+- **Meta-Learning**: MAML-based meta-learning for fast adaptation
+- **Test-Time Adaptation**: Online adaptation strategies for deployment
+- **Modular Design**: Easy to extend and customize components
+
+## Size and Limitations
+
 - Size: roughly the sum of array sizes; no pickling; portable; only ndarrays supported.
 - Limitations: dtype and shape must match model expectations; no optimizer state stored.
 
@@ -293,7 +123,8 @@ new_params = adapter.adapt(policy, envs, steps=5)
 ### Add a new policy (SSM subclass)
 
 - Subclass or implement a compatible interface with SSM:
-  - init_parameters, set_parameters, get_parameters, reset, act
+  
+- init_parameters, set_parameters, get_parameters, reset, act
 - If your architecture is reconfigurable, implement reconfigure(new_arch) for NAS integration.
 
 ### Add a new adaptation strategy
@@ -315,7 +146,16 @@ new_params = adapter.adapt(policy, envs, steps=5)
 - adaptation/test_adaptation.py: imports TestTimeAdapter/AdaptConfig and calls adapt() with a stub policy/envs
 
 Run tests:
+
 ```bash
 python -m pytest -q  # if you add pytest
 # or simply run each test file with python to check imports/execution.
 ```
+
+## License
+
+MIT License
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
