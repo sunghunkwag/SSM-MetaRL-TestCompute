@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ssm-metarl"
+version = "0.1.0"
+description = "State Space Models for Meta Reinforcement Learning with Test-Time Adaptation"
+readme = "README.md"
+requires-python = ">=3.8"
+license = {text = "MIT"}
+authors = [
+    {name = "sunghunkwag", email = ""}
+]
+keywords = ["reinforcement-learning", "meta-learning", "state-space-models", "test-time-adaptation"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+]
+dependencies = [
+    "numpy>=1.20.0",
+    "torch>=1.9.0",
+    "gymnasium>=0.26.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "black>=22.0.0",
+    "flake8>=4.0.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/sunghunkwag/SSM-MetaRL-TestCompute"
+Repository = "https://github.com/sunghunkwag/SSM-MetaRL-TestCompute"
+"Bug Tracker" = "https://github.com/sunghunkwag/SSM-MetaRL-TestCompute/issues"
