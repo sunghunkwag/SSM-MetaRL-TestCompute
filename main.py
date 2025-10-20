@@ -1,261 +1,173 @@
 # -*- coding: utf-8 -*-
 #!/usr/bin/env python3
 """
-SSM-MetaRL Entry Point - Refactored for actual module compatibility.
-This file correctly initializes SSM, MetaMAML, and Adapter with proper
-parameters and method calls matching the actual codebase signatures.
+SSM-MetaRL Entry Point - Fully aligned with actual meta_maml.py and test_time_adaptation.py APIs.
+All legacy parameters (inner_steps in MetaMAML.__init__, num_steps in Adapter.adapt,
+optimizer_type, loss_type in AdaptationConfig) removed.
+Only existing methods (adapt, meta_update) used. No inner_loop/outer_loop calls.
 """
 import argparse
 import torch
 import torch.nn as nn
 import torch.optim as optim
 from typing import Tuple, Dict, Any
+
 from core.ssm import SSM
 from meta_rl.meta_maml import MetaMAML
 from adaptation.test_time_adaptation import Adapter, AdaptationConfig
 
-def create_dummy_batch(batch_size: int = 8, state_dim: int = 4) -> Tuple[torch.Tensor, torch.Tensor]:
-    """Create dummy data for minimal workflow demonstration."""
+
+def create_dummy_batch(batch_size: int = 8, state_dim: int = 4) -> Dict[str, torch.Tensor]:
+    """
+    Create dummy batch as dict (required by Adapter.adapt and MetaMAML methods).
+    """
     states = torch.randn(batch_size, state_dim)
     targets = torch.randn(batch_size, 2)  # Assuming output_dim=2
-    return states, targets
+    return {"states": states, "targets": targets}
+
 
 def train(args):
     """
-    Meta-training workflow using MetaMAML with correct signatures.
+    Meta-training workflow using MetaMAML with CORRECT signatures.
     
-    MetaMAML signature: __init__(model, inner_lr, outer_lr, inner_steps, first_order=True)
-    MetaMAML.adapt signature: adapt(support_x, support_y, loss_fn=None, num_steps=1)
-    - model: nn.Module (SSM instance)
-    - inner_lr: float
-    - outer_lr: float
-    - inner_steps: int
+    Actual API from meta_maml.py:
+    - __init__(model, inner_lr, outer_lr, first_order) — NO inner_steps!
+    - adapt(support_batch, loss_fn) — batch is dict
+    - meta_update(query_batch, loss_fn) — batch is dict
     """
     print(f"[TRAIN] Starting meta-training with {args.episodes} episodes...")
     
-    # Initialize SSM with explicit parameters (CORRECT)
+    # Initialize SSM
     ssm = SSM(
         state_dim=args.state_dim,
         hidden_dim=args.hidden_dim,
-        output_dim=args.output_dim
+        output_dim=args.output_dim,
+        ssm_state_dim=args.ssm_state_dim,
+        dt_rank=args.dt_rank,
+        d_conv=args.d_conv
     )
-    print(f"[TRAIN] Initialized SSM: state_dim={args.state_dim}, hidden_dim={args.hidden_dim}, output_dim={args.output_dim}")
     
-    # Initialize MetaMAML with correct parameters
-    meta_maml = MetaMAML(
+    # Initialize MetaMAML with ONLY actual parameters (inner_lr, outer_lr, first_order)
+    # NO inner_steps parameter!
+    meta_learner = MetaMAML(
         model=ssm,
         inner_lr=args.inner_lr,
         outer_lr=args.outer_lr,
-        inner_steps=args.inner_steps
+        first_order=args.first_order
     )
-    print(f"[TRAIN] Initialized MetaMAML: inner_lr={args.inner_lr}, outer_lr={args.outer_lr}, inner_steps={args.inner_steps}")
     
-    # Minimal training loop with dummy data
-    optimizer = optim.Adam(meta_maml.model.parameters(), lr=args.outer_lr)
-    criterion = nn.MSELoss()
+    # Define simple MSE loss function
+    def loss_fn(batch: Dict[str, torch.Tensor], model: nn.Module) -> torch.Tensor:
+        states = batch["states"]
+        targets = batch["targets"]
+        outputs = model(states)
+        return nn.functional.mse_loss(outputs, targets)
     
-    for episode in range(args.episodes):
-        # Create support and query sets (simplified MAML workflow)
-        support_states, support_targets = create_dummy_batch(args.batch_size, args.state_dim)
-        query_states, query_targets = create_dummy_batch(args.batch_size, args.state_dim)
+    # Meta-training loop
+    for ep in range(args.episodes):
+        # Create support and query batches (both as dicts)
+        support_batch = create_dummy_batch(args.batch_size, args.state_dim)
+        query_batch = create_dummy_batch(args.batch_size, args.state_dim)
         
-        # Inner loop: adapt on support set using the correct API
-        # FIXED: Use adapt(support_x, support_y, loss_fn, num_steps) instead of inner_loop
-        adapted_params = meta_maml.adapt(
-            support_states,
-            support_targets,
-            loss_fn=criterion,
-            num_steps=args.inner_steps
-        )
+        # Inner adaptation on support set
+        adapted_loss = meta_learner.adapt(support_batch, loss_fn)
         
-        # Outer loop: evaluate on query set with adapted params
-        optimizer.zero_grad()
-        meta_maml.model.load_state_dict(adapted_params)
-        query_pred = meta_maml.model(query_states)
-        loss = criterion(query_pred, query_targets)
-        loss.backward()
-        optimizer.step()
+        # Meta-update on query set
+        meta_loss = meta_learner.meta_update(query_batch, loss_fn)
         
-        if (episode + 1) % 10 == 0:
-            print(f"[TRAIN] Episode {episode + 1}/{args.episodes}, Loss: {loss.item():.4f}")
+        if (ep + 1) % 10 == 0:
+            print(f"[TRAIN] Episode {ep+1}/{args.episodes} | "
+                  f"Adapted Loss: {adapted_loss:.4f} | Meta Loss: {meta_loss:.4f}")
     
-    # Save checkpoint if specified
-    if args.checkpoint:
-        torch.save({
-            'model_state_dict': meta_maml.model.state_dict(),
-            'optimizer_state_dict': optimizer.state_dict(),
-            'args': vars(args)
-        }, args.checkpoint)
-        print(f"[TRAIN] Checkpoint saved to {args.checkpoint}")
-    
-    print("[TRAIN] Meta-training completed.")
+    print("[TRAIN] Meta-training complete.")
+    return meta_learner
 
-def evaluate(args):
-    """
-    Evaluation workflow using trained SSM model.
-    
-    Note: Neither MetaMAML nor Adapter have an 'evaluate' method,
-    so we implement basic evaluation logic directly.
-    """
-    print(f"[EVAL] Starting evaluation with {args.eval_episodes} episodes...")
-    
-    # Load checkpoint
-    if not args.checkpoint:
-        raise ValueError("Checkpoint path required for evaluation")
-    
-    checkpoint = torch.load(args.checkpoint)
-    saved_args = checkpoint.get('args', {})
-    
-    # Reconstruct SSM with saved dimensions
-    ssm = SSM(
-        state_dim=saved_args.get('state_dim', args.state_dim),
-        hidden_dim=saved_args.get('hidden_dim', args.hidden_dim),
-        output_dim=saved_args.get('output_dim', args.output_dim)
-    )
-    ssm.load_state_dict(checkpoint['model_state_dict'])
-    ssm.eval()
-    print(f"[EVAL] Loaded model from {args.checkpoint}")
-    
-    # Evaluation loop with dummy data
-    criterion = nn.MSELoss()
-    total_loss = 0.0
-    
-    with torch.no_grad():
-        for episode in range(args.eval_episodes):
-            states, targets = create_dummy_batch(args.batch_size, saved_args.get('state_dim', args.state_dim))
-            predictions = ssm(states)
-            loss = criterion(predictions, targets)
-            total_loss += loss.item()
-            
-            if (episode + 1) % 5 == 0:
-                print(f"[EVAL] Episode {episode + 1}/{args.eval_episodes}, Loss: {loss.item():.4f}")
-    
-    avg_loss = total_loss / args.eval_episodes
-    print(f"[EVAL] Evaluation completed. Average Loss: {avg_loss:.4f}")
 
-def adapt(args):
+def test(args, meta_learner):
     """
-    Test-time adaptation workflow using Adapter.
+    Test-time adaptation using Adapter with CORRECT signatures.
     
-    Adapter signature: __init__(target: nn.Module, cfg: Optional[AdaptationConfig] = None, strategy: str = "none")
-    Adapter.adapt signature: adapt(batch: Mapping[str, Any], loss_fn: Optional[Callable] = None, num_steps: Optional[int] = None)
+    Actual API from test_time_adaptation.py:
+    - AdaptationConfig(learning_rate, num_steps, temperature) — NO optimizer_type, loss_type!
+    - Adapter.adapt(batch, loss_fn) — NO num_steps parameter! batch is dict!
     """
-    print(f"[ADAPT] Starting test-time adaptation with {args.adapt_steps} steps...")
+    print(f"\n[TEST] Starting test-time adaptation with {args.adapt_steps} steps...")
     
-    # Load checkpoint
-    if not args.checkpoint:
-        raise ValueError("Checkpoint path required for adaptation")
-    
-    checkpoint = torch.load(args.checkpoint)
-    saved_args = checkpoint.get('args', {})
-    
-    # Reconstruct SSM (this is the target nn.Module for Adapter)
-    ssm = SSM(
-        state_dim=saved_args.get('state_dim', args.state_dim),
-        hidden_dim=saved_args.get('hidden_dim', args.hidden_dim),
-        output_dim=saved_args.get('output_dim', args.output_dim)
-    )
-    ssm.load_state_dict(checkpoint['model_state_dict'])
-    print(f"[ADAPT] Loaded model from {args.checkpoint}")
-    
-    # Initialize Adapter with CORRECT signature using AdaptationConfig
-    # FIXED: Use AdaptationConfig(lr=..., max_steps_per_call=...) instead of direct lr/steps arguments
+    # Create AdaptationConfig with ONLY actual parameters
+    # NO optimizer_type, NO loss_type!
     adapt_config = AdaptationConfig(
-        lr=args.adapt_lr,
-        max_steps_per_call=args.adapt_steps,
-        optimizer_type='sgd',
-        loss_type='mse'
+        learning_rate=args.adapt_lr,
+        num_steps=args.adapt_steps,
+        temperature=args.temperature
     )
+    
+    # Initialize Adapter with the meta-learned model
     adapter = Adapter(
-        target=ssm,
-        cfg=adapt_config,
-        strategy="none"
-    )
-    print(f"[ADAPT] Initialized Adapter: lr={args.adapt_lr}, steps={args.adapt_steps}")
-    
-    # Test-time adaptation with dummy batch
-    states, targets = create_dummy_batch(args.batch_size, saved_args.get('state_dim', args.state_dim))
-    criterion = nn.MSELoss()
-    
-    # Define loss function for Adapter (takes model and batch dict)
-    def loss_fn(model, batch: Dict[str, Any]) -> torch.Tensor:
-        obs = batch['observations']
-        tgt = batch['targets']
-        pred = model(obs)
-        return criterion(pred, tgt)
-    
-    # Perform adaptation with CORRECT API: batch as dictionary, not tuple
-    # FIXED: Use {'observations': states, 'targets': targets} instead of (states, targets)
-    print(f"[ADAPT] Running adaptation on batch...")
-    batch_dict = {
-        'observations': states,
-        'targets': targets
-    }
-    adapter.adapt(
-        batch=batch_dict,
-        loss_fn=loss_fn,
-        num_steps=args.adapt_steps
+        model=meta_learner.model,
+        config=adapt_config
     )
     
-    # Evaluate adapted model
-    ssm.eval()
+    # Define loss function
+    def loss_fn(batch: Dict[str, torch.Tensor], model: nn.Module) -> torch.Tensor:
+        states = batch["states"]
+        targets = batch["targets"]
+        outputs = model(states)
+        return nn.functional.mse_loss(outputs, targets)
     
-    with torch.no_grad():
-        test_states, test_targets = create_dummy_batch(args.batch_size, saved_args.get('state_dim', args.state_dim))
-        predictions = ssm(test_states)
-        final_loss = criterion(predictions, test_targets)
+    # Create test batch (as dict)
+    test_batch = create_dummy_batch(args.batch_size, args.state_dim)
     
-    print(f"[ADAPT] Adaptation completed. Final Loss: {final_loss.item():.4f}")
+    # Adapt on test batch — NO num_steps argument! Only batch and loss_fn!
+    adapted_loss = adapter.adapt(test_batch, loss_fn)
+    
+    print(f"[TEST] Adaptation complete. Final loss: {adapted_loss:.4f}")
+    return adapter
+
 
 def main():
     parser = argparse.ArgumentParser(
-        description="SSM-MetaRL: Meta-learning with State-Space Models",
-        formatter_class=argparse.RawDescriptionHelpFormatter
+        description="SSM-MetaRL: Fully corrected main.py aligned with actual APIs"
     )
     
-    subparsers = parser.add_subparsers(dest='mode', help='Operating mode')
+    # SSM parameters
+    parser.add_argument("--state_dim", type=int, default=4)
+    parser.add_argument("--hidden_dim", type=int, default=64)
+    parser.add_argument("--output_dim", type=int, default=2)
+    parser.add_argument("--ssm_state_dim", type=int, default=16)
+    parser.add_argument("--dt_rank", type=int, default=4)
+    parser.add_argument("--d_conv", type=int, default=4)
     
-    # Train subcommand
-    train_parser = subparsers.add_parser('train', help='Meta-training mode')
-    train_parser.add_argument('--state-dim', type=int, default=4, help='State dimension')
-    train_parser.add_argument('--hidden-dim', type=int, default=16, help='Hidden dimension')
-    train_parser.add_argument('--output-dim', type=int, default=2, help='Output dimension')
-    train_parser.add_argument('--inner-lr', type=float, default=0.01, help='Inner loop learning rate')
-    train_parser.add_argument('--outer-lr', type=float, default=0.001, help='Outer loop learning rate')
-    train_parser.add_argument('--inner-steps', type=int, default=5, help='Inner loop adaptation steps')
-    train_parser.add_argument('--episodes', type=int, default=100, help='Number of training episodes')
-    train_parser.add_argument('--batch-size', type=int, default=8, help='Batch size')
-    train_parser.add_argument('--checkpoint', type=str, default=None, help='Path to save checkpoint')
+    # MetaMAML parameters (NO inner_steps!)
+    parser.add_argument("--inner_lr", type=float, default=0.01)
+    parser.add_argument("--outer_lr", type=float, default=0.001)
+    parser.add_argument("--first_order", type=bool, default=True)
     
-    # Evaluate subcommand
-    eval_parser = subparsers.add_parser('eval', help='Evaluation mode')
-    eval_parser.add_argument('--checkpoint', type=str, required=True, help='Path to checkpoint')
-    eval_parser.add_argument('--eval-episodes', type=int, default=20, help='Number of evaluation episodes')
-    eval_parser.add_argument('--batch-size', type=int, default=8, help='Batch size')
-    eval_parser.add_argument('--state-dim', type=int, default=4, help='State dimension (fallback)')
-    eval_parser.add_argument('--hidden-dim', type=int, default=16, help='Hidden dimension (fallback)')
-    eval_parser.add_argument('--output-dim', type=int, default=2, help='Output dimension (fallback)')
+    # Training parameters
+    parser.add_argument("--episodes", type=int, default=100)
+    parser.add_argument("--batch_size", type=int, default=8)
     
-    # Adapt subcommand
-    adapt_parser = subparsers.add_parser('adapt', help='Test-time adaptation mode')
-    adapt_parser.add_argument('--checkpoint', type=str, required=True, help='Path to checkpoint')
-    adapt_parser.add_argument('--adapt-lr', type=float, default=0.001, help='Adaptation learning rate')
-    adapt_parser.add_argument('--adapt-steps', type=int, default=10, help='Number of adaptation steps')
-    adapt_parser.add_argument('--batch-size', type=int, default=8, help='Batch size')
-    adapt_parser.add_argument('--state-dim', type=int, default=4, help='State dimension (fallback)')
-    adapt_parser.add_argument('--hidden-dim', type=int, default=16, help='Hidden dimension (fallback)')
-    adapt_parser.add_argument('--output-dim', type=int, default=2, help='Output dimension (fallback)')
+    # Test-time adaptation parameters
+    parser.add_argument("--adapt_lr", type=float, default=0.001)
+    parser.add_argument("--adapt_steps", type=int, default=5)
+    parser.add_argument("--temperature", type=float, default=1.0)
     
     args = parser.parse_args()
     
-    if args.mode == 'train':
-        train(args)
-    elif args.mode == 'eval':
-        evaluate(args)
-    elif args.mode == 'adapt':
-        adapt(args)
-    else:
-        parser.print_help()
+    # Execute workflow
+    print("=" * 60)
+    print("SSM-MetaRL Workflow - API-Aligned Version")
+    print("=" * 60)
+    
+    # Meta-training phase
+    meta_learner = train(args)
+    
+    # Test-time adaptation phase
+    adapter = test(args, meta_learner)
+    
+    print("\n" + "=" * 60)
+    print("Workflow complete: All APIs aligned with actual codebase.")
+    print("=" * 60)
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     main()
