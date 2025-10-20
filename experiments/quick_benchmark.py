@@ -1,14 +1,12 @@
 #!/usr/bin/env python3
 """
 Quick Benchmark Script for SSM-MetaRL
-
-Runs a small, fast experiment to validate the training pipeline and compare
-performance with/without improvements. Designed to complete in under 2 minutes.
+Runs a small, fast experiment to validate the training pipeline.
+Designed to complete in under 2 minutes.
 
 Usage:
     python experiments/quick_benchmark.py
 """
-
 import os
 import sys
 import time
@@ -17,12 +15,13 @@ import subprocess
 # Add parent directory to path
 sys.path.insert(0, os.path.abspath(os.path.dirname(__file__) + '/..'))
 
-def run_experiment(name, args, timeout=120):
+def run_experiment(name, mode, args, timeout=120):
     """
     Run a single experiment with given arguments.
     
     Args:
         name: Experiment name for display
+        mode: Mode to run ('train' or 'eval')
         args: List of command-line arguments to pass to main.py
         timeout: Maximum runtime in seconds (default 120)
     
@@ -33,7 +32,7 @@ def run_experiment(name, args, timeout=120):
     print(f"Running: {name}")
     print(f"{'='*60}")
     
-    cmd = [sys.executable, 'main.py'] + args
+    cmd = [sys.executable, 'main.py', mode] + args
     print(f"Command: {' '.join(cmd)}")
     print()
     
@@ -50,10 +49,9 @@ def run_experiment(name, args, timeout=120):
         
         # Parse output for key metrics
         output_lines = result.stdout.split('\n')
-        metrics = {}
         
         for line in output_lines:
-            if 'loss' in line.lower() or 'reward' in line.lower():
+            if 'loss' in line.lower() or 'reward' in line.lower() or 'episode' in line.lower():
                 print(line)
         
         return {
@@ -95,7 +93,7 @@ def print_summary(results):
     print("BENCHMARK SUMMARY")
     print(f"{'='*60}\n")
     
-    print(f"{'Experiment':<35} {'Status':<10} {'Time (s)':<10}")
+    print(f"{'Experiment':<40} {'Status':<10} {'Time (s)':<10}")
     print("-" * 60)
     
     for r in results:
@@ -106,7 +104,7 @@ def print_summary(results):
             'error': '❌'
         }.get(r['status'], '?')
         
-        print(f"{r['name']:<35} {status_icon} {r['status']:<9} {r['time']:>8.1f}")
+        print(f"{r['name']:<40} {status_icon} {r['status']:<9} {r['time']:>8.1f}")
     
     print("\n" + "="*60)
     
@@ -125,39 +123,48 @@ def main():
     """
     Main benchmark routine.
     """
-    print("""\n
+    print("""
     ╔═══════════════════════════════════════════════════════╗
     ║   SSM-MetaRL Quick Benchmark                          ║
-    ║   Testing pipeline & performance tuning               ║
+    ║   Testing pipeline & performance validation           ║
     ╚═══════════════════════════════════════════════════════╝
     """)
     
-    # Define experiments
-    # Using very small parameters for speed (<2min total)
+    # Define experiments - using main.py's actual CLI arguments
+    # Available args: mode (train/eval), --state-dim, --action-dim, 
+    # --episodes, --batch-size, --lr
     experiments = [
         {
-            'name': 'Baseline (minimal)',
+            'name': 'Baseline (minimal training)',
+            'mode': 'train',
             'args': [
-                '--steps', '100',
-                '--batch_size', '32',
-                '--lr', '0.001'
-            ]
-        },
-        {
-            'name': 'With improvements',
-            'args': [
-                '--steps', '100',
-                '--batch_size', '32',
+                '--episodes', '5',
+                '--batch-size', '8',
                 '--lr', '0.001',
-                '--improve'
+                '--state-dim', '4',
+                '--action-dim', '2'
             ]
         },
         {
-            'name': 'Larger batch',
+            'name': 'Slightly larger batch',
+            'mode': 'train',
             'args': [
-                '--steps', '100',
-                '--batch_size', '64',
-                '--lr', '0.001'
+                '--episodes', '5',
+                '--batch-size', '16',
+                '--lr', '0.001',
+                '--state-dim', '4',
+                '--action-dim', '2'
+            ]
+        },
+        {
+            'name': 'More episodes',
+            'mode': 'train',
+            'args': [
+                '--episodes', '10',
+                '--batch-size', '8',
+                '--lr', '0.001',
+                '--state-dim', '4',
+                '--action-dim', '2'
             ]
         },
     ]
@@ -165,7 +172,7 @@ def main():
     results = []
     
     for exp in experiments:
-        result = run_experiment(exp['name'], exp['args'])
+        result = run_experiment(exp['name'], exp['mode'], exp['args'])
         results.append(result)
         
         # Show immediate result
@@ -179,12 +186,13 @@ def main():
     # Print final summary
     print_summary(results)
     
-    print("\n💡 Performance Tuning Tips:")
-    print("   - Increase --batch_size for better GPU utilization")
-    print("   - Adjust --lr based on convergence speed")
-    print("   - Use --improve flag to enable optimizations")
-    print("   - Monitor GPU memory with nvidia-smi")
-    print("\n📊 For full experiments, increase --steps and --episodes\n")
+    print("\n💡 Usage Tips:")
+    print("   - Use 'train' mode: python main.py train --episodes N --batch-size B")
+    print("   - Use 'eval' mode: python main.py eval --episodes N")
+    print("   - Adjust --state-dim and --action-dim for your environment")
+    print("   - Increase --batch-size for better GPU utilization")
+    print("   - Tune --lr based on convergence behavior")
+    print("\n📊 For full experiments, increase --episodes\n")
     
     # Exit with error if any experiments failed
     if any(r['status'] != 'success' for r in results):
