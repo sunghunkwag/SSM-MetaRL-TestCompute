@@ -1,5 +1,4 @@
 """Environment runner module."""
+from .environment import Environment
 
-from .environment import EnvironmentRunner
-
-__all__ = ['EnvironmentRunner']
+__all__ = ['Environment']
