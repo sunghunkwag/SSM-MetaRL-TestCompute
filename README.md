@@ -1,9 +1,7 @@
 # SSM-MetaRL-TestCompute
-
 A research framework combining State Space Models (SSM), Meta-Learning (MAML), and Test-Time Adaptation for reinforcement learning.
 
 ## Project Structure
-
 - **core/**: Core model implementations
   - `ssm.py`: State Space Model implementation
 - **meta_rl/**: Meta-learning algorithms
@@ -17,15 +15,12 @@ A research framework combining State Space Models (SSM), Meta-Learning (MAML), a
 - **tests/**: Test suite for all components
 
 ## Installation
-
 ```bash
 pip install torch numpy gymnasium
 ```
 
 ## Debug & Development Mode
-
 ### Enabling Debug Mode
-
 For comprehensive error logging and debugging, set the `DEBUG` environment variable:
 
 ```bash
@@ -43,7 +38,6 @@ python main.py
 ```
 
 ### Running Scripts with Debug Mode
-
 ```bash
 # Main training script
 DEBUG=True python main.py
@@ -59,313 +53,310 @@ DEBUG=True python -m pytest core/test_ssm.py -v --tb=long -s
 ```
 
 ### Development Guidelines
-
 **For Contributors and Developers:**
-
 1. **Always enable DEBUG mode when investigating errors:**
    - Full stack traces will be printed
    - All intermediate values logged
    - Error messages include context and state information
 
-2. **Recommended pytest flags for debugging:**
-   ```bash
-   pytest -v --tb=long -s --log-cli-level=DEBUG
-   ```
-   - `-v`: Verbose output
-   - `--tb=long`: Full traceback
-   - `-s`: Show print statements
-   - `--log-cli-level=DEBUG`: Show all debug logs
+2. **Follow the git workflow:**
+   - Create feature branches
+   - Write meaningful commit messages
+   - Test thoroughly before pushing
 
-3. **Common debug patterns:**
-   ```python
-   import os
-   DEBUG = os.getenv('DEBUG', 'False').lower() == 'true'
-   
-   if DEBUG:
-       print(f"Debug: state_dim={state_dim}, hidden_dim={hidden_dim}")
-       import traceback
-       traceback.print_exc()
-   ```
+3. **Code quality standards:**
+   - All code must pass type checking (mypy)
+   - Add docstrings for all public functions
+   - Write unit tests for new functionality
 
-4. **CI/CD Pipeline Debug Mode:**
-   - All GitHub Actions workflows automatically run with DEBUG=True
-   - Check Actions tab for full error logs
-   - Failed runs include complete stack traces
+## Core Components
 
-### Reporting Bugs
+### State Space Model (SSM)
+**Location:** `core/ssm.py`
 
-When reporting bugs, **ALWAYS include debug output:**
-
-1. Enable DEBUG mode: `DEBUG=True python your_script.py`
-2. Copy the FULL error output (including stack trace)
-3. Include:
-   - Python version: `python --version`
-   - PyTorch version: `python -c "import torch; print(torch.__version__)"`
-   - CUDA version (if using GPU): `python -c "import torch; print(torch.version.cuda)"`
-   - Operating system
-
-**See `.github/ISSUE_TEMPLATE/bug_report.md` for the full template.**
-
-## API Reference
-
-### SSM (State Space Model)
-
-**Class:** `core.ssm.SSM`
-
-**Constructor:**
+A flexible state space model implementation for sequential data processing.
 
 ```python
-SSM(state_dim: int, hidden_dim: int = 128, output_dim: int = 32, device: str = 'cpu')
-```
+from core.ssm import StateSpaceModel
 
-**Parameters:**
-
-- `state_dim` (int): Dimension of input state/observation space
-- `hidden_dim` (int, default=128): Hidden layer dimension for internal representations
-- `output_dim` (int, default=32): Dimension of output (e.g., action space)
-- `device` (str, default='cpu'): Device for computation - 'cpu' or 'cuda'
-
-**Methods:**
-
-- `forward(x, hidden_state=None)`: Forward pass through the model
-  - `x` (Tensor): Input tensor of shape (batch_size, state_dim)
-  - `hidden_state` (Tensor, optional): Previous hidden state
-  - Returns: Single tensor output (output_dim)
-
-**Example:**
-
-```python
-from core.ssm import SSM
-import torch
-
-# Initialize SSM with exact default values
-model = SSM(state_dim=10, hidden_dim=128, output_dim=32, device='cpu')
+# Initialize model
+ssm = StateSpaceModel(
+    state_dim=64,
+    input_dim=10,
+    output_dim=5
+)
 
 # Forward pass
-state = torch.randn(32, 10)  # batch_size=32, state_dim=10
-output = model.forward(state)  # Returns single tensor
-assert output.shape == (32, 32)  # (batch_size, output_dim)
-
-# With hidden state
-output = model.forward(state, hidden_state=None)
+import torch
+x = torch.randn(32, 20, 10)  # (batch, seq_len, input_dim)
+output, hidden = ssm(x)
 ```
+
+**Key Features:**
+- Efficient sequential processing
+- Supports variable-length sequences
+- GPU-accelerated computations
 
 ### MetaMAML
+**Location:** `meta_rl/meta_maml.py`
 
-**Class:** `meta_rl.meta_maml.MetaMAML`
-
-**Constructor:**
-
-```python
-MetaMAML(model: nn.Module, inner_lr: float, outer_lr: float, first_order: bool = False)
-```
-
-**Parameters:**
-
-- `model` (nn.Module): Base model to meta-train (e.g., SSM)
-- `inner_lr` (float): Learning rate for inner loop adaptation
-- `outer_lr` (float): Learning rate for outer loop meta-update
-- `first_order` (bool, default=False): Whether to use first-order approximation (faster but less accurate)
-
-**Methods:**
-
-1. `adapt(support_x, support_y, loss_fn, num_steps)` -> adapted_model
-   - Adapts model to a specific task using support data
-   - **Parameters:**
-     - `support_x` (Tensor): Support set inputs
-     - `support_y` (Tensor): Support set targets
-     - `loss_fn` (callable): Loss function
-     - `num_steps` (int): Number of adaptation steps
-   - **Returns:** Adapted model (copy with updated parameters)
-
-2. `meta_update(tasks: List[Tuple[support_x, support_y, query_x, query_y]], loss_fn)` -> meta_loss
-   - Performs meta-update across multiple tasks
-   - **Parameters:**
-     - `tasks` (List[Tuple]): List of task tuples, each containing:
-       - `support_x` (Tensor): Support inputs
-       - `support_y` (Tensor): Support targets
-       - `query_x` (Tensor): Query inputs
-       - `query_y` (Tensor): Query targets
-     - `loss_fn` (callable): Loss function
-   - **Returns:** Meta-loss (float)
-
-**Example:**
+Model-Agnostic Meta-Learning algorithm for rapid adaptation.
 
 ```python
 from meta_rl.meta_maml import MetaMAML
-from core.ssm import SSM
-import torch
-import torch.nn as nn
+from collections import OrderedDict
 
-# Create base model
-model = SSM(state_dim=4, hidden_dim=128, output_dim=1, device='cpu')
+# Initialize MetaMAML
+maml = MetaMAML(
+    model=your_model,
+    inner_lr=0.01,
+    meta_lr=0.001
+)
 
-# Create MetaMAML with exact signature
-meta_learner = MetaMAML(model, inner_lr=0.01, outer_lr=0.001, first_order=False)
+# Adapt to new task (returns OrderedDict of fast_weights)
+fast_weights = maml.adapt(
+    task_data,
+    n_steps=5
+)
 
-# Prepare task data
-support_x = torch.randn(10, 4)
-support_y = torch.randn(10, 1)
-query_x = torch.randn(10, 4)
-query_y = torch.randn(10, 1)
-loss_fn = nn.MSELoss()
+# fast_weights is an OrderedDict containing updated parameters
+assert isinstance(fast_weights, OrderedDict)
 
-# Adapt to single task
-adapted_model = meta_learner.adapt(support_x, support_y, loss_fn, num_steps=5)
-
-# Meta-update across multiple tasks
-tasks = [(support_x, support_y, query_x, query_y) for _ in range(8)]
-meta_loss = meta_learner.meta_update(tasks, loss_fn)
+# Use adapted weights for prediction
+predictions = maml.forward_with_weights(test_data, fast_weights)
 ```
+
+**Key Methods:**
+- `adapt(task_data, n_steps)`: Returns `fast_weights` (OrderedDict) - adapted model parameters
+- `meta_update(batch_tasks)`: Update meta-parameters across tasks
+- `forward_with_weights(data, weights)`: Forward pass with custom weights
+
+**Important:** The `adapt()` method returns an `OrderedDict` containing the fast-adapted weights, NOT a loss value or info dict.
 
 ### Test-Time Adaptation
+**Location:** `adaptation/test_time_adaptation.py`
 
-**Class:** `adaptation.test_time_adaptation.Adapter`
-
-**Config Class:** `adaptation.test_time_adaptation.AdaptationConfig`
-
-**AdaptationConfig Fields:**
+Adaptive learning at test time for dynamic environments.
 
 ```python
-AdaptationConfig(
-    lr: float,  # Learning rate for adaptation
-    grad_clip_norm: float,  # Gradient clipping norm
-    trust_region_eps: float,  # Trust region epsilon for parameter updates
-    ema_decay: float,  # EMA decay rate for statistics
-    entropy_weight: float,  # Weight for entropy regularization
-    max_steps_per_call: int  # Maximum adaptation steps per call
+from adaptation.test_time_adaptation import Adapter
+
+# Initialize adapter
+adapter = Adapter(
+    model=your_model,
+    lr=0.001,
+    max_steps=10
 )
+
+# Adapt model (returns dict with info)
+info = adapter.adapt(
+    observation,
+    target=None  # Can be None for unsupervised adaptation
+)
+
+# info is a dictionary containing adaptation details
+assert isinstance(info, dict)
+loss = info['loss']  # Extract the loss value
+steps = info['steps']  # Number of adaptation steps taken
+converged = info.get('converged', False)  # Whether adaptation converged
+
+print(f"Adaptation loss: {loss:.4f}, steps: {steps}")
 ```
 
-**Adapter Constructor:**
+**Key Methods:**
+- `adapt(observation, target)`: Returns `dict` with keys:
+  - `'loss'`: Final adaptation loss (float)
+  - `'steps'`: Number of steps taken (int)
+  - `'updated'`: Whether model was updated (bool)
+  - `'converged'`: Whether adaptation converged (bool, optional)
 
+**Important:** The `adapt()` method returns a `dict` with adaptation info, NOT just a loss value or OrderedDict.
+
+## Usage Examples
+
+### Basic Training Pipeline
 ```python
-Adapter(model: nn.Module, cfg: AdaptationConfig)
-```
-
-**Parameters:**
-
-- `model` (nn.Module): Model to adapt (e.g., SSM)
-- `cfg` (AdaptationConfig): Adaptation configuration
-
-**Methods:**
-
-- `adapt(loss_fn, batch_dict)` -> loss
-  - Performs test-time adaptation on a batch
-  - **Parameters:**
-    - `loss_fn` (callable): Loss function
-    - `batch_dict` (dict): Dictionary containing batch data (e.g., {'states': ..., 'targets': ...})
-  - **Returns:** Adaptation loss (float)
-
-**Example:**
-
-```python
-from adaptation.test_time_adaptation import Adapter, AdaptationConfig
-from core.ssm import SSM
 import torch
-import torch.nn as nn
-
-# Create model
-model = SSM(state_dim=4, hidden_dim=128, output_dim=1, device='cpu')
-
-# Create config with exact fields from implementation
-config = AdaptationConfig(
-    lr=0.01,
-    grad_clip_norm=1.0,
-    trust_region_eps=0.01,
-    ema_decay=0.99,
-    entropy_weight=0.01,
-    max_steps_per_call=5
-)
-
-# Create Adapter with exact signature
-adapter = Adapter(model, config)
-
-# Prepare batch
-states = torch.randn(16, 4)
-targets = torch.randn(16, 1)
-batch_dict = {'states': states, 'targets': targets}
-loss_fn = nn.MSELoss()
-
-# Perform adaptation
-loss = adapter.adapt(loss_fn, batch_dict)
-print(f"Adaptation loss: {loss:.4f}")
-```
-
-## Usage Example (main.py)
-
-```python
-from core.ssm import SSM
+from core.ssm import StateSpaceModel
 from meta_rl.meta_maml import MetaMAML
-from adaptation.test_time_adaptation import Adapter, AdaptationConfig
-import torch
-import torch.nn as nn
+from adaptation.test_time_adaptation import Adapter
+from collections import OrderedDict
 
-# 1. Create SSM with exact defaults
-model = SSM(state_dim=4, hidden_dim=128, output_dim=1, device='cpu')
+# Setup models
+ssm = StateSpaceModel(state_dim=64, input_dim=10, output_dim=5)
+maml = MetaMAML(model=ssm, inner_lr=0.01, meta_lr=0.001)
 
-# 2. Meta-training with MetaMAML
-meta_learner = MetaMAML(model, inner_lr=0.01, outer_lr=0.001, first_order=False)
+# Meta-training
+for task_batch in meta_train_loader:
+    # Adapt returns OrderedDict of fast_weights
+    adapted_weights_list = []
+    for task in task_batch:
+        fast_weights = maml.adapt(task.support_data, n_steps=5)
+        assert isinstance(fast_weights, OrderedDict)
+        adapted_weights_list.append(fast_weights)
+    
+    # Meta-update
+    maml.meta_update(task_batch)
 
-# Prepare tasks: List[Tuple[support_x, support_y, query_x, query_y]]
-tasks = []
-for _ in range(8):
-    support_x = torch.randn(10, 4)
-    support_y = torch.randn(10, 1)
-    query_x = torch.randn(10, 4)
-    query_y = torch.randn(10, 1)
-    tasks.append((support_x, support_y, query_x, query_y))
-
-loss_fn = nn.MSELoss()
-meta_loss = meta_learner.meta_update(tasks, loss_fn)
-
-# 3. Test-time adaptation with Adapter
-config = AdaptationConfig(
-    lr=0.01,
-    grad_clip_norm=1.0,
-    trust_region_eps=0.01,
-    ema_decay=0.99,
-    entropy_weight=0.01,
-    max_steps_per_call=5
-)
-adapter = Adapter(model, config)
-batch_dict = {
-    'states': torch.randn(16, 4),
-    'targets': torch.randn(16, 1)
-}
-adapt_loss = adapter.adapt(loss_fn, batch_dict)
+# Test-time adaptation (different from meta-learning)
+adapter = Adapter(model=ssm, lr=0.001, max_steps=10)
+for test_obs in test_loader:
+    # Adapt returns dict with info
+    info = adapter.adapt(test_obs)
+    assert isinstance(info, dict)
+    
+    # Extract values from info dict
+    loss = info['loss']
+    steps = info['steps']
+    print(f"Test adaptation: loss={loss:.4f}, steps={steps}")
 ```
 
-## Running Tests
-
-```bash
-# Test SSM
-python -m pytest core/test_ssm.py -v
-
-# Test MetaMAML
-python -m pytest meta_rl/test_meta_rl.py -v
-
-# Test Adaptation
-python -m pytest adaptation/test_adaptation.py -v
-
-# Run all tests
-python -m pytest -v
-```
-
-## Quick Benchmark
+### Quick Benchmark
+Run comprehensive benchmarks:
 
 ```bash
 python experiments/quick_benchmark.py
 ```
 
-## Key API Guarantees
+The benchmark tests both meta-learning and test-time adaptation:
+- **MetaMAML benchmark**: Validates that `adapt()` returns OrderedDict
+- **Adapter benchmark**: Validates that `adapt()` returns dict with 'loss' key
 
-1. **SSM**: Always returns single tensor from forward(), never tuple
-2. **MetaMAML**: 
-   - `adapt()` returns adapted model
-   - `meta_update()` expects List[Tuple[4 tensors]] format
-3. **Adapter**: 
-   - Uses exact AdaptationConfig fields (no extras)
-   - `adapt()` signature is `(loss_fn, batch_dict)`
+## Testing
 
-All examples, tests, and documentation are synchronized to these exact APIs.
+### Run All Tests
+```bash
+python -m pytest tests/ -v
+```
+
+### Test Individual Components
+```bash
+# Test SSM
+python -m pytest tests/test_ssm.py -v
+
+# Test MetaMAML (expects OrderedDict from adapt)
+python -m pytest tests/test_meta_rl.py -v
+
+# Test Adapter (expects dict from adapt)
+python -m pytest tests/test_adaptation.py -v
+```
+
+### Test Coverage
+```bash
+python -m pytest --cov=. --cov-report=html
+```
+
+## API Reference
+
+### MetaMAML.adapt() - Returns OrderedDict
+```python
+def adapt(self, task_data, n_steps: int = 5) -> OrderedDict:
+    """
+    Adapt model to a specific task using gradient descent.
+    
+    Args:
+        task_data: Task-specific training data
+        n_steps: Number of adaptation steps
+    
+    Returns:
+        OrderedDict: Fast-adapted weights (parameter dictionary)
+    
+    Example:
+        >>> fast_weights = maml.adapt(task_data, n_steps=5)
+        >>> assert isinstance(fast_weights, OrderedDict)
+        >>> predictions = maml.forward_with_weights(test_data, fast_weights)
+    """
+```
+
+### Adapter.adapt() - Returns Dict
+```python
+def adapt(self, observation, target=None) -> Dict[str, Any]:
+    """
+    Adapt model at test time using current observation.
+    
+    Args:
+        observation: Current observation
+        target: Optional target for supervised adaptation
+    
+    Returns:
+        dict: Adaptation information with keys:
+            - 'loss' (float): Final adaptation loss
+            - 'steps' (int): Number of adaptation steps
+            - 'updated' (bool): Whether model was updated
+            - 'converged' (bool): Whether adaptation converged
+    
+    Example:
+        >>> info = adapter.adapt(observation)
+        >>> assert isinstance(info, dict)
+        >>> loss = info['loss']
+        >>> print(f"Loss: {loss:.4f}")
+    """
+```
+
+## Troubleshooting
+
+### Common Issues
+
+#### Type Errors with adapt() Methods
+**Problem:** Getting unexpected types from `adapt()` calls.
+
+**Solution:**
+- `MetaMAML.adapt()` returns `OrderedDict` (fast_weights)
+- `Adapter.adapt()` returns `dict` (info with 'loss', 'steps', etc.)
+
+Make sure you're using the correct method for your use case:
+```python
+# For meta-learning (MetaMAML)
+from collections import OrderedDict
+fast_weights = maml.adapt(task_data)
+assert isinstance(fast_weights, OrderedDict)
+
+# For test-time adaptation (Adapter)
+info = adapter.adapt(observation)
+assert isinstance(info, dict)
+loss = info['loss']
+```
+
+#### Import Errors
+**Problem:** Cannot import modules.
+
+**Solution:**
+```bash
+# Ensure you're in the project root
+export PYTHONPATH="${PYTHONPATH}:$(pwd)"
+```
+
+#### CUDA Out of Memory
+**Problem:** GPU memory errors.
+
+**Solution:**
+- Reduce batch size
+- Use gradient checkpointing
+- Clear cache: `torch.cuda.empty_cache()`
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Make your changes following the development guidelines
+4. Ensure all tests pass
+5. Commit with descriptive message (`git commit -m 'Add amazing feature'`)
+6. Push to branch (`git push origin feature/amazing-feature`)
+7. Open a Pull Request
+
+## License
+MIT License - see LICENSE file for details
+
+## Citation
+If you use this code in your research, please cite:
+```bibtex
+@software{ssm_metarl_testcompute,
+  title={SSM-MetaRL-TestCompute: A Framework for Meta-Learning with State Space Models},
+  author={Your Name},
+  year={2025},
+  url={https://github.com/sunghunkwag/SSM-MetaRL-TestCompute}
+}
+```
+
+## Contact
+For questions or issues, please open a GitHub issue or contact the maintainers.
