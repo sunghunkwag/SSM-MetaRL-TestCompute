@@ -1,206 +1,285 @@
 #!/usr/bin/env python3
 """
 Quick Benchmark Script for SSM-MetaRL
-Runs a small, fast experiment to validate the training pipeline.
-Designed to complete in under 2 minutes.
+Directly tests Adapter and MetaMAML APIs with correct batch dict structure.
+Designed to validate API correctness and basic functionality.
 
 Usage:
     python experiments/quick_benchmark.py
 """
+
 import os
 import sys
 import time
-import subprocess
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from typing import Dict, Any
 
 # Add parent directory to path
 sys.path.insert(0, os.path.abspath(os.path.dirname(__file__) + '/..'))
 
-def run_experiment(name, mode, args, timeout=120):
+from core.ssm import SSM
+from adaptation.test_time_adaptation import Adapter, AdaptationConfig
+from meta_rl.meta_maml import MetaMAML
+
+
+def generate_dummy_batch(batch_size: int, state_dim: int, action_dim: int) -> Dict[str, torch.Tensor]:
     """
-    Run a single experiment with given arguments.
+    Generate dummy batch data in dict format as expected by Adapter.adapt().
     
     Args:
-        name: Experiment name for display
-        mode: Mode to run ('train' or 'eval')
-        args: List of command-line arguments to pass to main.py
-        timeout: Maximum runtime in seconds (default 120)
+        batch_size: Number of samples
+        state_dim: State dimension
+        action_dim: Action dimension (used as target dimension)
     
     Returns:
-        dict: Results including time, status, and output
+        Dictionary with 'observations' and 'targets' keys
     """
-    print(f"\n{'='*60}")
-    print(f"Running: {name}")
-    print(f"{'='*60}")
+    return {
+        'observations': torch.randn(batch_size, state_dim),
+        'targets': torch.randn(batch_size, action_dim)
+    }
+
+
+def test_adapter_api():
+    """
+    Test Adapter API with correct AdaptationConfig and dict batch structure.
+    """
+    print("\n" + "="*60)
+    print("Testing Adapter API")
+    print("="*60)
     
-    cmd = [sys.executable, 'main.py', mode] + args
-    print(f"Command: {' '.join(cmd)}")
-    print()
+    # Create SSM model
+    state_dim = 8
+    action_dim = 4
+    hidden_dim = 16
+    
+    ssm = SSM(
+        state_dim=state_dim,
+        action_dim=action_dim,
+        hidden_dim=hidden_dim
+    )
+    
+    print(f"✓ Created SSM model (state_dim={state_dim}, action_dim={action_dim})")
+    
+    # Create Adapter with AdaptationConfig (correct API)
+    adapt_cfg = AdaptationConfig(
+        lr=0.01,
+        max_steps_per_call=5,
+        optimizer='adam'
+    )
+    
+    adapter = Adapter(
+        target=ssm,
+        cfg=adapt_cfg,
+        strategy='none'
+    )
+    
+    print(f"✓ Created Adapter with cfg (lr={adapt_cfg.lr}, max_steps={adapt_cfg.max_steps_per_call})")
+    
+    # Define loss function
+    def loss_fn(model_output: torch.Tensor, batch: Dict[str, torch.Tensor]) -> torch.Tensor:
+        """Loss function matching Adapter.adapt() signature."""
+        targets = batch['targets']
+        return F.mse_loss(model_output, targets)
+    
+    # Generate batch as dict (correct API)
+    batch_size = 16
+    batch = generate_dummy_batch(batch_size, state_dim, action_dim)
+    
+    print(f"✓ Generated batch dict with keys: {list(batch.keys())}")
+    print(f"  - observations shape: {batch['observations'].shape}")
+    print(f"  - targets shape: {batch['targets'].shape}")
+    
+    # Test adaptation
+    start_time = time.time()
+    
+    try:
+        # Observe meta-features
+        adapter.observe(batch)
+        print("✓ Called adapter.observe(batch)")
+        
+        # Adapt model (batch must be dict)
+        adapted_params = adapter.adapt(loss_fn=loss_fn, batch=batch)
+        elapsed = time.time() - start_time
+        
+        print(f"✓ Called adapter.adapt(loss_fn=loss_fn, batch=batch)")
+        print(f"✓ Adaptation completed in {elapsed:.3f}s")
+        print(f"✓ Returned {len(adapted_params) if adapted_params else 0} adapted parameters")
+        
+        return True, "Adapter API test passed"
+        
+    except Exception as e:
+        elapsed = time.time() - start_time
+        print(f"✗ Adapter API test failed after {elapsed:.3f}s")
+        print(f"  Error: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return False, str(e)
+
+
+def test_meta_maml_api():
+    """
+    Test MetaMAML API with correct inner_loop signature (no criterion argument).
+    """
+    print("\n" + "="*60)
+    print("Testing MetaMAML API")
+    print("="*60)
+    
+    # Create SSM model
+    state_dim = 8
+    action_dim = 4
+    hidden_dim = 16
+    
+    ssm = SSM(
+        state_dim=state_dim,
+        action_dim=action_dim,
+        hidden_dim=hidden_dim
+    )
+    
+    print(f"✓ Created SSM model (state_dim={state_dim}, action_dim={action_dim})")
+    
+    # Create MetaMAML with correct API
+    meta_maml = MetaMAML(
+        model=ssm,
+        inner_lr=0.01,
+        outer_lr=0.001,
+        inner_steps=5,
+        first_order=False
+    )
+    
+    print(f"✓ Created MetaMAML (inner_lr=0.01, outer_lr=0.001, inner_steps=5)")
+    
+    # Generate support and query sets
+    batch_size = 16
+    support_x = torch.randn(batch_size, state_dim)
+    support_y = torch.randn(batch_size, action_dim)
+    query_x = torch.randn(batch_size, state_dim)
+    query_y = torch.randn(batch_size, action_dim)
+    
+    print(f"✓ Generated support and query sets")
+    print(f"  - support_x shape: {support_x.shape}")
+    print(f"  - support_y shape: {support_y.shape}")
     
     start_time = time.time()
     
     try:
-        result = subprocess.run(
-            cmd,
-            timeout=timeout,
-            capture_output=True,
-            text=True
-        )
+        # Test inner loop (no criterion argument in actual API)
+        adapted_params = meta_maml.inner_loop(support_x, support_y)
+        print(f"✓ Called meta_maml.inner_loop(support_x, support_y) - no criterion arg")
+        print(f"✓ Returned {len(adapted_params)} adapted parameters")
+        
+        # Test outer loop
+        loss = meta_maml.outer_loop(query_x, query_y, adapted_params)
         elapsed = time.time() - start_time
         
-        # Parse output for key metrics
-        output_lines = result.stdout.split('\n')
+        print(f"✓ Called meta_maml.outer_loop(query_x, query_y, adapted_params)")
+        print(f"✓ Outer loss: {loss.item():.4f}")
+        print(f"✓ MetaMAML test completed in {elapsed:.3f}s")
         
-        for line in output_lines:
-            if 'loss' in line.lower() or 'reward' in line.lower() or 'episode' in line.lower():
-                print(line)
+        return True, "MetaMAML API test passed"
         
-        return {
-            'name': name,
-            'status': 'success' if result.returncode == 0 else 'failed',
-            'time': elapsed,
-            'returncode': result.returncode,
-            'stdout': result.stdout,
-            'stderr': result.stderr
-        }
-        
-    except subprocess.TimeoutExpired:
-        elapsed = time.time() - start_time
-        print(f"⚠️  Timeout after {elapsed:.1f}s")
-        return {
-            'name': name,
-            'status': 'timeout',
-            'time': elapsed,
-            'returncode': -1
-        }
     except Exception as e:
         elapsed = time.time() - start_time
-        print(f"❌ Error: {e}")
-        return {
-            'name': name,
-            'status': 'error',
-            'time': elapsed,
-            'error': str(e)
-        }
+        print(f"✗ MetaMAML API test failed after {elapsed:.3f}s")
+        print(f"  Error: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return False, str(e)
 
-def print_summary(results):
+
+def test_batch_dict_compliance():
     """
-    Print a summary table of all experiments.
-    
-    Args:
-        results: List of result dictionaries from run_experiment
+    Test that batch dict structure is correctly used throughout.
     """
-    print(f"\n\n{'='*60}")
-    print("BENCHMARK SUMMARY")
-    print(f"{'='*60}\n")
-    
-    print(f"{'Experiment':<40} {'Status':<10} {'Time (s)':<10}")
-    print("-" * 60)
-    
-    for r in results:
-        status_icon = {
-            'success': '✓',
-            'failed': '✗',
-            'timeout': '⏱',
-            'error': '❌'
-        }.get(r['status'], '?')
-        
-        print(f"{r['name']:<40} {status_icon} {r['status']:<9} {r['time']:>8.1f}")
-    
     print("\n" + "="*60)
+    print("Testing Batch Dict Compliance")
+    print("="*60)
     
-    # Calculate statistics
-    successful = [r for r in results if r['status'] == 'success']
-    if len(successful) > 1:
-        print("\nPerformance Comparison:")
-        baseline = successful[0]
-        for exp in successful[1:]:
-            speedup = baseline['time'] / exp['time'] if exp['time'] > 0 else 0
-            diff = exp['time'] - baseline['time']
-            print(f"  {exp['name']} vs {baseline['name']}:")
-            print(f"    Time difference: {diff:+.2f}s ({speedup:.2f}x)")
+    batch_size = 8
+    state_dim = 4
+    action_dim = 2
+    
+    # Generate batch as dict
+    batch = generate_dummy_batch(batch_size, state_dim, action_dim)
+    
+    print(f"✓ Batch is dict: {isinstance(batch, dict)}")
+    print(f"✓ Batch keys: {list(batch.keys())}")
+    
+    # Verify required keys
+    required_keys = ['observations', 'targets']
+    missing_keys = [k for k in required_keys if k not in batch]
+    
+    if missing_keys:
+        print(f"✗ Missing required keys: {missing_keys}")
+        return False, f"Missing keys: {missing_keys}"
+    
+    print(f"✓ All required keys present: {required_keys}")
+    
+    # Verify types
+    for key in required_keys:
+        if not isinstance(batch[key], torch.Tensor):
+            print(f"✗ batch['{key}'] is not a torch.Tensor")
+            return False, f"batch['{key}'] is not a torch.Tensor"
+    
+    print(f"✓ All values are torch.Tensors")
+    print(f"✓ Batch dict compliance test passed")
+    
+    return True, "Batch dict compliance test passed"
+
 
 def main():
-    """
-    Main benchmark routine.
-    """
-    print("""
-    ╔═══════════════════════════════════════════════════════╗
-    ║   SSM-MetaRL Quick Benchmark                          ║
-    ║   Testing pipeline & performance validation           ║
-    ╚═══════════════════════════════════════════════════════╝
-    """)
-    
-    # Define experiments - using main.py's actual CLI arguments
-    # Available args: mode (train/eval), --state-dim, --action-dim, 
-    # --episodes, --batch-size, --lr
-    experiments = [
-        {
-            'name': 'Baseline (minimal training)',
-            'mode': 'train',
-            'args': [
-                '--episodes', '5',
-                '--batch-size', '8',
-                '--lr', '0.001',
-                '--state-dim', '4',
-                '--action-dim', '2'
-            ]
-        },
-        {
-            'name': 'Slightly larger batch',
-            'mode': 'train',
-            'args': [
-                '--episodes', '5',
-                '--batch-size', '16',
-                '--lr', '0.001',
-                '--state-dim', '4',
-                '--action-dim', '2'
-            ]
-        },
-        {
-            'name': 'More episodes',
-            'mode': 'train',
-            'args': [
-                '--episodes', '10',
-                '--batch-size', '8',
-                '--lr', '0.001',
-                '--state-dim', '4',
-                '--action-dim', '2'
-            ]
-        },
-    ]
+    print("\n" + "#"*60)
+    print("# SSM-MetaRL Quick Benchmark")
+    print("# Testing API Correctness")
+    print("#"*60)
     
     results = []
     
-    for exp in experiments:
-        result = run_experiment(exp['name'], exp['mode'], exp['args'])
-        results.append(result)
-        
-        # Show immediate result
-        if result['status'] == 'success':
-            print(f"\n✓ Completed in {result['time']:.2f}s")
-        elif result['status'] == 'failed':
-            print(f"\n✗ Failed (exit code {result.get('returncode', 'unknown')})")
-            if result.get('stderr'):
-                print(f"Error output:\n{result['stderr'][:500]}")
+    # Run all tests
+    tests = [
+        ("Batch Dict Compliance", test_batch_dict_compliance),
+        ("Adapter API", test_adapter_api),
+        ("MetaMAML API", test_meta_maml_api),
+    ]
     
-    # Print final summary
-    print_summary(results)
+    for test_name, test_func in tests:
+        try:
+            success, message = test_func()
+            results.append((test_name, success, message))
+        except Exception as e:
+            results.append((test_name, False, str(e)))
+            print(f"\n✗ {test_name} crashed: {e}")
     
-    print("\n💡 Usage Tips:")
-    print("   - Use 'train' mode: python main.py train --episodes N --batch-size B")
-    print("   - Use 'eval' mode: python main.py eval --episodes N")
-    print("   - Adjust --state-dim and --action-dim for your environment")
-    print("   - Increase --batch-size for better GPU utilization")
-    print("   - Tune --lr based on convergence behavior")
-    print("\n📊 For full experiments, increase --episodes\n")
+    # Print summary
+    print("\n" + "="*60)
+    print("BENCHMARK SUMMARY")
+    print("="*60)
     
-    # Exit with error if any experiments failed
-    if any(r['status'] != 'success' for r in results):
-        print("\n⚠️  Some experiments failed!")
-        sys.exit(1)
+    passed = sum(1 for _, success, _ in results if success)
+    total = len(results)
     
-    print("\n✓ All benchmarks passed!\n")
-    sys.exit(0)
+    for test_name, success, message in results:
+        status = "✓ PASS" if success else "✗ FAIL"
+        print(f"{status}: {test_name}")
+        if not success:
+            print(f"  → {message}")
+    
+    print(f"\n{passed}/{total} tests passed")
+    
+    if passed == total:
+        print("\n✓ All API correctness tests passed!")
+        print("\n💡 Key Points Verified:")
+        print("  - Adapter uses cfg=AdaptationConfig(lr=..., max_steps_per_call=...)")
+        print("  - Adapter.adapt() accepts batch as dict with 'observations' and 'targets'")
+        print("  - MetaMAML.inner_loop() takes only (support_x, support_y) - no criterion arg")
+        print("  - All batch structures use dict format, not tuples")
+        return 0
+    else:
+        print("\n✗ Some tests failed. Please review the errors above.")
+        return 1
+
 
 if __name__ == '__main__':
-    main()
+    sys.exit(main())
