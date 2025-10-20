@@ -1,411 +1,76 @@
+# -*- coding: utf-8 -*-
 #!/usr/bin/env python3
-            
-"  python main.py eval --checkpoint checkpoints/latest.pt --episodes 20 --improve attention\n"
-            
-"  python main.py adapt --checkpoint checkpoints/latest.pt --episodes 20 --adapt-steps 10 --improve bn\n"
-        
-)
-,
-    
-)
-    subparsers = parser.
-add_subparsers
-(
-dest=
-"mode"
-, help=
-"Operation mode"
-, required=
-True
-)
-    
-def
- 
-add_improve_args
-(
-p: argparse.
-ArgumentParser
-)
- -> 
-None
-:
-        p.
-add_argument
-(
-            
-"--improve"
-, nargs=
-'*'
-, default=
-None
-, metavar=
-'TAG'
-,
-            help=
-(
-"Optional improvement tags to apply: "
- + 
-", "
-.
-join
-(
-sorted
-(
-VALID_IMPROVE_TAGS
-)
-)
-)
-        
-)
-    train_parser = subparsers.
-add_parser
-(
-"train"
-, help=
-"Train meta-initialization via meta-learning"
-)
-    train_parser.
-add_argument
-(
-"--config"
-, default=
-"basic"
-, choices=
-list
-(
-EXAMPLE_CONFIGS.
-keys
-(
-)
-)
-, help=
-"Experiment config"
-)
-    train_parser.
-add_argument
-(
-"--seed"
-, type=int, help=
-"Random seed"
-)
-    train_parser.
-add_argument
-(
-"--outer-steps"
-, type=int, help=
-"Number of meta-learning outer steps"
-)
-    train_parser.
-add_argument
-(
-"--tasks-per-batch"
-, type=int, help=
-"Tasks per meta-batch"
-)
-    train_parser.
-add_argument
-(
-"--ckpt-dir"
-, help=
-"Checkpoint directory"
-)
-    
-add_improve_args
-(
-train_parser
-)
-    eval_parser = subparsers.
-add_parser
-(
-"eval"
-, help=
-"Evaluate policy without adaptation"
-)
-    eval_parser.
-add_argument
-(
-"--checkpoint"
-, required=
-True
-, help=
-"Path to checkpoint .pt file"
-)
-    eval_parser.
-add_argument
-(
-"--config"
-, default=
-"basic"
-, choices=
-list
-(
-EXAMPLE_CONFIGS.
-keys
-(
-)
-)
-, help=
-"Experiment config"
-)
-    eval_parser.
-add_argument
-(
-"--episodes"
-, type=int, default=
-20
-, help=
-"Number of evaluation episodes"
-)
-    
-add_improve_args
-(
-eval_parser
-)
-    adapt_parser = subparsers.
-add_parser
-(
-"adapt"
-, help=
-"Evaluate with test-time adaptation"
-)
-    adapt_parser.
-add_argument
-(
-"--checkpoint"
-, required=
-True
-, help=
-"Path to checkpoint .pt file"
-)
-    adapt_parser.
-add_argument
-(
-"--config"
-, default=
-"basic"
-, choices=
-list
-(
-EXAMPLE_CONFIGS.
-keys
-(
-)
-)
-, help=
-"Experiment config"
-)
-    adapt_parser.
-add_argument
-(
-"--episodes"
-, type=int, default=
-20
-, help=
-"Number of evaluation episodes"
-)
-    adapt_parser.
-add_argument
-(
-"--adapt-steps"
-, type=int, default=
-10
-, help=
-"Adaptation steps per episode"
-)
-    adapt_parser.
-add_argument
-(
-"--online"
-, action=
-"store_true"
-, help=
-"Enable online adaptation during rollout"
-)
-    
-add_improve_args
-(
-adapt_parser
-)
-    
-return
- parser
-def 
-main
-(
-argv: Optional
-[
-list
-[
-str
-]
-]
- = 
-None
-)
- -> int:
-    parser = 
-build_parser
-(
-)
-    args = parser.
-parse_args
-(
-argv
-)
-    cfg = 
-dict
-(
-EXAMPLE_CONFIGS
-[
-args.
-config
-]
-)
-    
-if
- args.
-seed
- 
-is
- 
-not
- 
-None
-:
-        cfg
-[
-"seed"
-]
- = args.
-seed
-    
-if
- args.
-tasks_per_batch
- 
-is
- 
-not
- 
-None
-:
-        cfg
-[
-"tasks_per_batch"
-]
- = args.
-tasks_per_batch
-    
-if
- args.
-outer_steps
- 
-is
- 
-not
- 
-None
-:
-        cfg
-[
-"outer_steps"
-]
- = args.
-outer_steps
-    
-if
- 
-getattr
-(
-args, 
-"ckpt_dir"
-, 
-None
-)
-:
-        cfg
-[
-"ckpt_dir"
-]
- = args.
-ckpt_dir
-    os.
-makedirs
-(
-cfg.
-get
-(
-"ckpt_dir"
-, 
-"checkpoints"
-)
-, exist_ok=
-True
-)
-    
-if
- args.
-mode
- == 
-"train"
-:
-        
-run_train
-(
-cfg, args
-)
-    
-elif
- args.
-mode
- == 
-"eval"
-:
-        
-run_eval
-(
-cfg, args
-)
-    
-elif
- args.
-mode
- == 
-"adapt"
-:
-        
-run_adapt
-(
-cfg, args
-)
-    
-else
-:
-        parser.
-error
-(
-f"Unknown mode: 
-{
-args.
-mode
-}"
-)
-    
-return
- 
-0
-if
- __name__ == 
-"__main__"
-:
-    
-raise
- 
-SystemExit
-(
-main
-(
-)
-)
 
-# Trivial change for commit message update
+import argparse
+from core.ssm import SSM
+from meta_rl.meta_maml import MetaMAML
+from env_runner.environment import Environment
+from adaptation.test_time_adaptation import Adapter
+
+def add_train_args(parser):
+    parser.add_argument('--episodes', type=int, default=100, help='Number of training episodes')
+    parser.add_argument('--meta-lr', type=float, default=1e-3, help='Meta learning rate')
+    parser.add_argument('--adapt-lr', type=float, default=1e-2, help='Adaptation learning rate')
+    parser.add_argument('--checkpoint', type=str, help='Checkpoint path')
+
+def add_eval_args(parser):
+    parser.add_argument('--checkpoint', type=str, required=True, help='Checkpoint path')
+    parser.add_argument('--episodes', type=int, default=20, help='Number of evaluation episodes')
+    parser.add_argument('--improve', type=str, choices=['attention', 'bn'], help='Improvement method')
+
+def add_adapt_args(parser):
+    parser.add_argument('--checkpoint', type=str, required=True, help='Checkpoint path')
+    parser.add_argument('--episodes', type=int, default=20, help='Number of adaptation episodes')
+    parser.add_argument('--adapt-steps', type=int, default=10, help='Adaptation steps')
+    parser.add_argument('--improve', type=str, choices=['attention', 'bn'], help='Improvement method')
+
+def train(args):
+    env = Environment()
+    ssm = SSM()
+    meta_maml = MetaMAML(ssm, meta_lr=args.meta_lr, adapt_lr=args.adapt_lr)
+    meta_maml.train(env, episodes=args.episodes)
+    if args.checkpoint:
+        meta_maml.save(args.checkpoint)
+
+def evaluate(args):
+    env = Environment()
+    ssm = SSM()
+    meta_maml = MetaMAML(ssm)
+    meta_maml.load(args.checkpoint)
+    results = meta_maml.evaluate(env, episodes=args.episodes)
+    print(f'Evaluation results: {results}')
+
+def adapt(args):
+    env = Environment()
+    ssm = SSM()
+    meta_maml = MetaMAML(ssm)
+    meta_maml.load(args.checkpoint)
+    adapter = Adapter(meta_maml)
+    adapter.adapt(env, episodes=args.episodes, steps=args.adapt_steps)
+    results = adapter.evaluate(env)
+    print(f'Adaptation results: {results}')
+
+def main():
+    parser = argparse.ArgumentParser(description='SSM MetaRL Training and Testing')
+    subparsers = parser.add_subparsers(dest='mode', help='Operation mode', required=True)
+    
+    train_parser = subparsers.add_parser('train', help='Train the model')
+    add_train_args(train_parser)
+    
+    eval_parser = subparsers.add_parser('eval', help='Evaluate the model')
+    add_eval_args(eval_parser)
+    
+    adapt_parser = subparsers.add_parser('adapt', help='Adapt the model')
+    add_adapt_args(adapt_parser)
+    
+    args = parser.parse_args()
+    
+    if args.mode == 'train':
+        train(args)
+    elif args.mode == 'eval':
+        evaluate(args)
+    elif args.mode == 'adapt':
+        adapt(args)
+
+if __name__ == '__main__':
+    main()
