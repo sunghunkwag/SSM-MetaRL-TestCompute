@@ -2,21 +2,17 @@
 #!/usr/bin/env python3
 """
 SSM-MetaRL Entry Point - Refactored for actual module compatibility.
-
 This file correctly initializes SSM, MetaMAML, and Adapter with proper
 parameters and method calls matching the actual codebase signatures.
 """
-
 import argparse
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from typing import Tuple
-
+from typing import Tuple, Dict, Any
 from core.ssm import SSM
 from meta_rl.meta_maml import MetaMAML
-from adaptation.test_time_adaptation import Adapter
-
+from adaptation.test_time_adaptation import Adapter, AdaptationConfig
 
 def create_dummy_batch(batch_size: int = 8, state_dim: int = 4) -> Tuple[torch.Tensor, torch.Tensor]:
     """Create dummy data for minimal workflow demonstration."""
@@ -24,12 +20,12 @@ def create_dummy_batch(batch_size: int = 8, state_dim: int = 4) -> Tuple[torch.T
     targets = torch.randn(batch_size, 2)  # Assuming output_dim=2
     return states, targets
 
-
 def train(args):
     """
     Meta-training workflow using MetaMAML with correct signatures.
     
-    MetaMAML signature: __init__(model, inner_lr, outer_lr, inner_steps)
+    MetaMAML signature: __init__(model, inner_lr, outer_lr, inner_steps, first_order=True)
+    MetaMAML.adapt signature: adapt(support_x, support_y, loss_fn=None, num_steps=1)
     - model: nn.Module (SSM instance)
     - inner_lr: float
     - outer_lr: float
@@ -45,7 +41,7 @@ def train(args):
     )
     print(f"[TRAIN] Initialized SSM: state_dim={args.state_dim}, hidden_dim={args.hidden_dim}, output_dim={args.output_dim}")
     
-    # Initialize MetaMAML with correct parameters (FIXED: no 'adapt_lr', use 'inner_lr' and 'outer_lr')
+    # Initialize MetaMAML with correct parameters
     meta_maml = MetaMAML(
         model=ssm,
         inner_lr=args.inner_lr,
@@ -55,7 +51,6 @@ def train(args):
     print(f"[TRAIN] Initialized MetaMAML: inner_lr={args.inner_lr}, outer_lr={args.outer_lr}, inner_steps={args.inner_steps}")
     
     # Minimal training loop with dummy data
-    # Note: MetaMAML doesn't have a 'train' method, so we implement minimal logic
     optimizer = optim.Adam(meta_maml.model.parameters(), lr=args.outer_lr)
     criterion = nn.MSELoss()
     
@@ -64,11 +59,13 @@ def train(args):
         support_states, support_targets = create_dummy_batch(args.batch_size, args.state_dim)
         query_states, query_targets = create_dummy_batch(args.batch_size, args.state_dim)
         
-        # Inner loop: adapt on support set
-        adapted_params = meta_maml.inner_loop(
+        # Inner loop: adapt on support set using the correct API
+        # FIXED: Use adapt(support_x, support_y, loss_fn, num_steps) instead of inner_loop
+        adapted_params = meta_maml.adapt(
             support_states,
             support_targets,
-            criterion
+            loss_fn=criterion,
+            num_steps=args.inner_steps
         )
         
         # Outer loop: evaluate on query set with adapted params
@@ -92,7 +89,6 @@ def train(args):
         print(f"[TRAIN] Checkpoint saved to {args.checkpoint}")
     
     print("[TRAIN] Meta-training completed.")
-
 
 def evaluate(args):
     """
@@ -137,13 +133,12 @@ def evaluate(args):
     avg_loss = total_loss / args.eval_episodes
     print(f"[EVAL] Evaluation completed. Average Loss: {avg_loss:.4f}")
 
-
 def adapt(args):
     """
     Test-time adaptation workflow using Adapter.
     
-    Adapter signature: __init__(target: nn.Module, lr: float = 0.001, steps: int = 10)
-    Adapter.adapt signature: adapt(loss_fn, batch, fwd_fn=None)
+    Adapter signature: __init__(target: nn.Module, cfg: Optional[AdaptationConfig] = None, strategy: str = "none")
+    Adapter.adapt signature: adapt(batch: Mapping[str, Any], loss_fn: Optional[Callable] = None, num_steps: Optional[int] = None)
     """
     print(f"[ADAPT] Starting test-time adaptation with {args.adapt_steps} steps...")
     
@@ -163,11 +158,18 @@ def adapt(args):
     ssm.load_state_dict(checkpoint['model_state_dict'])
     print(f"[ADAPT] Loaded model from {args.checkpoint}")
     
-    # Initialize Adapter with CORRECT signature (target: nn.Module)
-    adapter = Adapter(
-        target=ssm,  # CORRECT: passing nn.Module, not MetaMAML
+    # Initialize Adapter with CORRECT signature using AdaptationConfig
+    # FIXED: Use AdaptationConfig(lr=..., max_steps_per_call=...) instead of direct lr/steps arguments
+    adapt_config = AdaptationConfig(
         lr=args.adapt_lr,
-        steps=args.adapt_steps
+        max_steps_per_call=args.adapt_steps,
+        optimizer_type='sgd',
+        loss_type='mse'
+    )
+    adapter = Adapter(
+        target=ssm,
+        cfg=adapt_config,
+        strategy="none"
     )
     print(f"[ADAPT] Initialized Adapter: lr={args.adapt_lr}, steps={args.adapt_steps}")
     
@@ -175,21 +177,27 @@ def adapt(args):
     states, targets = create_dummy_batch(args.batch_size, saved_args.get('state_dim', args.state_dim))
     criterion = nn.MSELoss()
     
-    # Define forward function for Adapter
-    def forward_fn(model, batch):
-        states, targets = batch
-        return model(states)
+    # Define loss function for Adapter (takes model and batch dict)
+    def loss_fn(model, batch: Dict[str, Any]) -> torch.Tensor:
+        obs = batch['observations']
+        tgt = batch['targets']
+        pred = model(obs)
+        return criterion(pred, tgt)
     
-    # Perform adaptation (CORRECT: using actual Adapter.adapt signature)
+    # Perform adaptation with CORRECT API: batch as dictionary, not tuple
+    # FIXED: Use {'observations': states, 'targets': targets} instead of (states, targets)
     print(f"[ADAPT] Running adaptation on batch...")
-    adapted_state = adapter.adapt(
-        loss_fn=criterion,
-        batch=(states, targets),
-        fwd_fn=forward_fn
+    batch_dict = {
+        'observations': states,
+        'targets': targets
+    }
+    adapter.adapt(
+        batch=batch_dict,
+        loss_fn=loss_fn,
+        num_steps=args.adapt_steps
     )
     
     # Evaluate adapted model
-    ssm.load_state_dict(adapted_state)
     ssm.eval()
     
     with torch.no_grad():
@@ -198,7 +206,6 @@ def adapt(args):
         final_loss = criterion(predictions, test_targets)
     
     print(f"[ADAPT] Adaptation completed. Final Loss: {final_loss.item():.4f}")
-
 
 def main():
     parser = argparse.ArgumentParser(
@@ -249,7 +256,6 @@ def main():
         adapt(args)
     else:
         parser.print_help()
-
 
 if __name__ == '__main__':
     main()
