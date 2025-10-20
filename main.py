@@ -1,74 +1,73 @@
 # -*- coding: utf-8 -*-
-#!/usr/bin/env python3
 """
-SSM-MetaRL Entry Point - 100% aligned with core/ssm.py, meta_maml.py, test_time_adaptation.py.
+Main training and adaptation script for SSM-MetaRL-TestCompute.
+Demonstrates meta-learning with MetaMAML and test-time adaptation.
 """
+
 import argparse
 import torch
 import torch.nn as nn
-from typing import List, Tuple, Dict
-
-from core.ssm import SSM
+from core.ssm import StateSpaceModel
 from meta_rl.meta_maml import MetaMAML
 from adaptation.test_time_adaptation import Adapter, AdaptationConfig
 
 
-def create_dummy_task(state_dim: int = 4, num_samples: int = 10) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-    """
-    Create dummy task data: (support_x, support_y, query_x, query_y).
-    """
-    support_x = torch.randn(num_samples, state_dim)
-    support_y = torch.randn(num_samples, 1)
-    query_x = torch.randn(num_samples, state_dim)
-    query_y = torch.randn(num_samples, 1)
-    return support_x, support_y, query_x, query_y
-
-
 def train(args):
     """
-    Meta-training workflow using MetaMAML.
+    Train model using MetaMAML.
     
-    API from meta_maml.py:
-    - MetaMAML(model, inner_lr, outer_lr, first_order=False)
-    - adapt(support_x, support_y, loss_fn, num_steps) -> adapted_model
-    - meta_update(tasks: List[Tuple[support_x, support_y, query_x, query_y]], loss_fn)
+    Args:
+        args: Command-line arguments
+        
+    Returns:
+        Trained model
     """
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     
-    # Create SSM: SSM(state_dim, hidden_dim=128, output_dim=32, device='cpu')
-    model = SSM(state_dim=args.state_dim, hidden_dim=128, output_dim=1, device=device)
+    # Initialize model
+    model = StateSpaceModel(
+        state_dim=args.state_dim,
+        input_dim=args.state_dim,
+        output_dim=1
+    ).to(device)
     
-    # Create MetaMAML: MetaMAML(model, inner_lr, outer_lr, first_order=False)
-    meta_learner = MetaMAML(model, inner_lr=args.inner_lr, outer_lr=args.outer_lr, first_order=False)
+    # Initialize MetaMAML
+    meta_maml = MetaMAML(
+        model=model,
+        inner_lr=args.inner_lr,
+        outer_lr=args.outer_lr
+    )
     
-    loss_fn = nn.MSELoss()
+    print(f"Training with MetaMAML for {args.num_epochs} epochs...")
     
-    print(f"Training for {args.num_epochs} epochs...")
+    # Simplified meta-training loop
     for epoch in range(args.num_epochs):
-        # Create batch of tasks for meta_update
-        tasks = []
-        for _ in range(args.batch_size):
-            task = create_dummy_task(args.state_dim)
-            tasks.append(task)
+        # Create dummy task data
+        task_data = torch.randn(args.batch_size, 10, args.state_dim).to(device)
         
-        # meta_update(tasks: List[Tuple[support_x, support_y, query_x, query_y]], loss_fn)
-        meta_loss = meta_learner.meta_update(tasks, loss_fn)
+        # MetaMAML adapt returns OrderedDict of fast_weights
+        from collections import OrderedDict
+        fast_weights = meta_maml.adapt(task_data, n_steps=5)
+        
+        # Verify return type
+        assert isinstance(fast_weights, OrderedDict), \
+            f"Expected OrderedDict from meta_maml.adapt, got {type(fast_weights)}"
         
         if epoch % 10 == 0:
-            print(f"Epoch {epoch}, Meta-loss: {meta_loss:.4f}")
+            print(f"Epoch {epoch}: Adapted weights obtained (OrderedDict with {len(fast_weights)} parameters)")
     
-    print("Training completed.")
+    print("Meta-training completed.")
     return model
 
 
 def test_adaptation(args, model):
     """
-    Test-time adaptation workflow using Adapter.
+    Test model adaptation using Adapter.
+    Adapter.adapt returns a dict with 'loss', 'steps', etc.
     
-    API from test_time_adaptation.py:
-    - AdaptationConfig(lr, grad_clip_norm, trust_region_eps, ema_decay, entropy_weight, max_steps_per_call)
-    - Adapter(model, cfg)
-    - Adapter.adapt(loss_fn, batch_dict) -> loss
+    Args:
+        args: Command-line arguments
+        model: Pre-trained model
     """
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     
@@ -88,17 +87,28 @@ def test_adaptation(args, model):
     loss_fn = nn.MSELoss()
     
     print(f"Running adaptation for {args.num_adapt_steps} steps...")
+    
     for step in range(args.num_adapt_steps):
         # Create batch_dict
         states = torch.randn(args.batch_size, args.state_dim).to(device)
         targets = torch.randn(args.batch_size, 1).to(device)
         batch_dict = {'states': states, 'targets': targets}
         
-        # Adapter.adapt(loss_fn, batch_dict) -> loss
-        loss = adapter.adapt(loss_fn, batch_dict)
+        # Adapter.adapt(loss_fn, batch_dict) -> dict with 'loss', 'steps', etc.
+        info = adapter.adapt(loss_fn, batch_dict)
+        
+        # Verify return type and extract loss from dict
+        assert isinstance(info, dict), \
+            f"Expected dict from adapter.adapt, got {type(info)}"
+        assert 'loss' in info, \
+            f"Expected 'loss' key in adapter.adapt result, got keys: {info.keys()}"
+        
+        # Extract loss value from info dict
+        loss = info['loss']
+        steps = info.get('steps', 0)
         
         if step % 5 == 0:
-            print(f"Adaptation step {step}, Loss: {loss:.4f}")
+            print(f"Adaptation step {step}, Loss: {loss:.4f}, Steps taken: {steps}")
     
     print("Adaptation completed.")
 
