@@ -1,5 +1,4 @@
 """Core SSM Module: PyTorch State Space Model Implementation
-
 This module provides a PyTorch-based State Space Model (SSM) class
 for meta-reinforcement learning applications. The SSM includes:
 - Linear state transition dynamics
@@ -7,16 +6,13 @@ for meta-reinforcement learning applications. The SSM includes:
 - torch.nn.Module integration
 - Model persistence (torch.save/torch.load)
 - GPU support
-
 Author: SSM-MetaRL Team
 Date: 2025-10-20
 """
-
 import torch
 import torch.nn as nn
 import os
 from typing import Tuple, Optional, Dict, Any
-
 
 class SSM(nn.Module):
     """PyTorch State Space Model with neural network components.
@@ -26,19 +22,22 @@ class SSM(nn.Module):
     
     Args:
         state_dim: Dimension of the hidden state
-        hidden_dim: Dimension of intermediate hidden layers
+        input_dim: Dimension of the input
         output_dim: Dimension of the output
+        hidden_dim: Dimension of intermediate hidden layers
         device: Device to run the model on ('cpu' or 'cuda')
     """
     
     def __init__(self, 
                  state_dim: int,
+                 input_dim: int,
+                 output_dim: int,
                  hidden_dim: int = 128,
-                 output_dim: int = 32,
                  device: str = 'cpu'):
         super(SSM, self).__init__()
         
         self.state_dim = state_dim
+        self.input_dim = input_dim
         self.hidden_dim = hidden_dim
         self.output_dim = output_dim
         self.device = device
@@ -51,7 +50,7 @@ class SSM(nn.Module):
         )
         
         # Input projection network (B matrix)
-        self.input_projection = nn.Linear(state_dim, state_dim)
+        self.input_projection = nn.Linear(input_dim, state_dim)
         
         # Output network (C matrix)
         self.output_network = nn.Sequential(
@@ -61,7 +60,7 @@ class SSM(nn.Module):
         )
         
         # Direct feedthrough (D matrix) - optional
-        self.feedthrough = nn.Linear(state_dim, output_dim)
+        self.feedthrough = nn.Linear(input_dim, output_dim)
         
         # Initialize hidden state
         self.hidden_state = None
@@ -85,7 +84,7 @@ class SSM(nn.Module):
         """Forward pass of the SSM.
         
         Args:
-            x: Input tensor of shape (batch_size, state_dim)
+            x: Input tensor of shape (batch_size, input_dim)
             hidden_state: Optional hidden state. If None, uses self.hidden_state
             
         Returns:
@@ -125,6 +124,7 @@ class SSM(nn.Module):
             'state_dict': self.state_dict(),
             'config': {
                 'state_dim': self.state_dim,
+                'input_dim': self.input_dim,
                 'hidden_dim': self.hidden_dim,
                 'output_dim': self.output_dim,
                 'device': self.device
@@ -172,17 +172,15 @@ class SSM(nn.Module):
         """
         self.hidden_state = hidden_state
 
-
 # Alias for backward compatibility
 StateSpaceModel = SSM
-
 
 if __name__ == "__main__":
     # Quick test
     print("Testing SSM module...")
     
-    ssm = SSM(state_dim=64, hidden_dim=128, output_dim=32)
-    print(f"Created SSM: state_dim=64, hidden_dim=128, output_dim=32")
+    ssm = SSM(state_dim=64, input_dim=64, output_dim=32, hidden_dim=128)
+    print(f"Created SSM: state_dim=64, input_dim=64, output_dim=32, hidden_dim=128")
     
     # Reset
     state = ssm.reset(batch_size=2)
