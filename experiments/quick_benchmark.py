@@ -39,9 +39,20 @@ def benchmark_meta_maml():
     
     print("\nRunning MetaMAML adaptation...")
     
+    # --- FIX: Start ---
+    # Initialize hidden state for stateful model (SSM)
+    # Batch size is B * T because data was flattened
+    initial_hidden = model.init_hidden(batch_size=B * T)
+    
     # Adapt - should return OrderedDict
-    # Call adapt_task with correct args
-    fast_weights = maml.adapt_task(support_x, support_y, num_steps=5)
+    # Call adapt_task with correct args (added initial_hidden_state)
+    fast_weights = maml.adapt_task(
+        support_x, 
+        support_y, 
+        initial_hidden_state=initial_hidden, 
+        num_steps=5
+    )
+    # --- FIX: End ---
     
     # Validate return type
     print(f"\nReturn type: {type(fast_weights)}")
@@ -89,15 +100,24 @@ def benchmark_adapter():
     loss_fn = nn.MSELoss()
     
     # Data must be 2D for SSM
-    states = torch.randn(8, 4)
-    targets = torch.randn(8, 1)
+    B_adapt = 8
+    states = torch.randn(B_adapt, 4)
+    targets = torch.randn(B_adapt, 1)
     
     # batch_dict keys must match model 'forward(x, ...)'
     batch_dict = {'x': states, 'targets': targets}
     
+    # --- FIX: Start ---
+    # Initialize hidden state for stateful model (SSM)
+    hidden_state = adapter.target.init_hidden(batch_size=B_adapt)
+    
     # Define wrapper functions for fwd and loss
     def fwd_fn(batch):
-        return adapter.target(batch['x'])
+        # Call SSM with (x, hidden_state) and return only output
+        # The same hidden_state is reused, which is fine for this benchmark
+        output, _ = adapter.target(batch['x'], hidden_state)
+        return output
+    # --- FIX: End ---
         
     def loss_fn_wrapper(outputs, batch):
         return loss_fn(outputs, batch['targets'])
