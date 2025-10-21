@@ -26,16 +26,22 @@ def benchmark_meta_maml():
     print("="*60)
     
     # Setup
-    model = StateSpaceModel(state_dim=4, input_dim=4, output_dim=1)
+    D_in, D_out = 4, 1
+    model = StateSpaceModel(state_dim=4, input_dim=D_in, output_dim=D_out)
     maml = MetaMAML(model=model, inner_lr=0.01, outer_lr=0.001)
     
     # Create task data
-    task_data = torch.randn(8, 10, 4)
+    B, T = 8, 10
+    
+    # [FIX] Reshape data and create targets
+    support_x = torch.randn(B, T, D_in).reshape(B * T, D_in)
+    support_y = torch.randn(B * T, D_out)
     
     print("\nRunning MetaMAML adaptation...")
     
     # Adapt - should return OrderedDict
-    fast_weights = maml.adapt(task_data, n_steps=5)
+    # [FIXED] Call adapt with correct args: support_x, support_y, and 'num_steps'
+    fast_weights = maml.adapt(support_x, support_y, num_steps=5)
     
     # Validate return type
     print(f"\nReturn type: {type(fast_weights)}")
@@ -81,14 +87,25 @@ def benchmark_adapter():
     adapter = Adapter(model, config)
     
     loss_fn = nn.MSELoss()
+    
+    # Data must be 2D for SSM
     states = torch.randn(8, 4)
     targets = torch.randn(8, 1)
-    batch_dict = {'states': states, 'targets': targets}
     
+    # [FIX] batch_dict keys must match model 'forward(x, ...)'
+    batch_dict = {'x': states, 'targets': targets}
+    
+    # Define wrapper functions for fwd and loss
+    def fwd_fn(batch):
+        return adapter.target(batch['x'])
+        
+    def loss_fn_wrapper(outputs, batch):
+        return loss_fn(outputs, batch['targets'])
+        
     print("\nRunning Adapter adaptation...")
     
     # Adapt - should return dict with 'loss' key
-    info = adapter.adapt(loss_fn, batch_dict)
+    info = adapter.adapt(loss_fn_wrapper, batch_dict, fwd_fn=fwd_fn)
     
     # Validate return type
     print(f"\nReturn type: {type(info)}")
