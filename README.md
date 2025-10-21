@@ -1,8 +1,3 @@
-네, 이전에 논의된 모든 수정 사항 (SSM 상태 관리, `adapt` 이름 변경, `env_runner` 사용, 테스트 파일 위치, Dockerfile 등)을 **모두 반영한** 최종 `README.md` 파일입니다.
-
-바로 복사해서 붙여넣으시면 됩니다.
-
-````markdown
 # SSM-MetaRL-TestCompute
 A research framework combining State Space Models (SSM), Meta-Learning (MAML), and Test-Time Adaptation for reinforcement learning.
 
