@@ -4,8 +4,8 @@ Quick benchmark script for SSM-MetaRL-TestCompute.
 Benchmarks both MetaMAML and Test-Time Adaptation.
 
 Validates:
-- MetaMAML.adapt() returns OrderedDict (fast_weights)
-- Adapter.adapt() returns dict with 'loss' key
+- MetaMAML.adapt_task() returns OrderedDict (fast_weights)
+- Adapter.update_step() returns dict with 'loss' key
 """
 
 import torch
@@ -19,7 +19,7 @@ from adaptation.test_time_adaptation import Adapter, AdaptationConfig
 def benchmark_meta_maml():
     """
     Benchmark MetaMAML adaptation.
-    Validates that adapt() returns OrderedDict.
+    Validates that adapt_task() returns OrderedDict.
     """
     print("\n" + "="*60)
     print("BENCHMARK: MetaMAML")
@@ -33,21 +33,21 @@ def benchmark_meta_maml():
     # Create task data
     B, T = 8, 10
     
-    # [FIX] Reshape data and create targets
+    # Reshape data and create targets
     support_x = torch.randn(B, T, D_in).reshape(B * T, D_in)
     support_y = torch.randn(B * T, D_out)
     
     print("\nRunning MetaMAML adaptation...")
     
     # Adapt - should return OrderedDict
-    # [FIXED] Call adapt with correct args: support_x, support_y, and 'num_steps'
-    fast_weights = maml.adapt(support_x, support_y, num_steps=5)
+    # Call adapt_task with correct args
+    fast_weights = maml.adapt_task(support_x, support_y, num_steps=5)
     
     # Validate return type
     print(f"\nReturn type: {type(fast_weights)}")
     assert isinstance(fast_weights, OrderedDict), \
         f"ERROR: Expected OrderedDict, got {type(fast_weights)}"
-    print("✓ PASS: adapt() returns OrderedDict")
+    print("✓ PASS: adapt_task() returns OrderedDict")
     
     # Validate contents
     print(f"\nNumber of parameters: {len(fast_weights)}")
@@ -68,7 +68,7 @@ def benchmark_meta_maml():
 def benchmark_adapter():
     """
     Benchmark Test-Time Adapter.
-    Validates that adapt() returns dict with 'loss' key.
+    Validates that update_step() returns dict with 'loss' key.
     """
     print("\n" + "="*60)
     print("BENCHMARK: Test-Time Adapter")
@@ -92,7 +92,7 @@ def benchmark_adapter():
     states = torch.randn(8, 4)
     targets = torch.randn(8, 1)
     
-    # [FIX] batch_dict keys must match model 'forward(x, ...)'
+    # batch_dict keys must match model 'forward(x, ...)'
     batch_dict = {'x': states, 'targets': targets}
     
     # Define wrapper functions for fwd and loss
@@ -105,13 +105,13 @@ def benchmark_adapter():
     print("\nRunning Adapter adaptation...")
     
     # Adapt - should return dict with 'loss' key
-    info = adapter.adapt(loss_fn_wrapper, batch_dict, fwd_fn=fwd_fn)
+    info = adapter.update_step(loss_fn_wrapper, batch_dict, fwd_fn=fwd_fn)
     
     # Validate return type
     print(f"\nReturn type: {type(info)}")
     assert isinstance(info, dict), \
         f"ERROR: Expected dict, got {type(info)}"
-    print("✓ PASS: adapt() returns dict")
+    print("✓ PASS: update_step() returns dict")
     
     # Validate 'loss' key
     print(f"\nKeys in result: {list(info.keys())}")
@@ -147,8 +147,8 @@ def run_all_benchmarks():
     print("# SSM-MetaRL-TestCompute Quick Benchmark Suite")
     print("#" + " "*58 + "#")
     print("# Testing return value consistency:")
-    print("#   - MetaMAML.adapt() → OrderedDict (fast_weights)")
-    print("#   - Adapter.adapt() → dict with 'loss' key")
+    print("#   - MetaMAML.adapt_task() → OrderedDict (fast_weights)")
+    print("#   - Adapter.update_step() → dict with 'loss' key")
     print("#"*60)
     
     try:
@@ -163,8 +163,8 @@ def run_all_benchmarks():
         print("# ALL BENCHMARKS PASSED ✓")
         print("#"*60)
         print("\nSummary:")
-        print("  • MetaMAML.adapt() correctly returns OrderedDict")
-        print("  • Adapter.adapt() correctly returns dict with 'loss'")
+        print("  • MetaMAML.adapt_task() correctly returns OrderedDict")
+        print("  • Adapter.update_step() correctly returns dict with 'loss'")
         print("  • All type assertions passed")
         print("  • Return value consistency verified")
         print("\n" + "="*60)
