@@ -25,11 +25,18 @@ WORKDIR /app
 # Copy the built wheel from the builder stage
 COPY --from=builder /app/dist/*.whl /tmp/
 
-# Install the wheel
-RUN pip install --no-cache-dir /tmp/*.whl
+# Install the wheel and runtime dependencies (like gymnasium if needed by scripts)
+# Note: Ensure all runtime deps are covered by the wheel or install them here
+RUN pip install --no-cache-dir /tmp/*.whl && \
+    rm /tmp/*.whl # Clean up the wheel file
 
-# Copy the main script to run
+# Copy application scripts (main, experiments, etc.)
 COPY main.py /app/main.py
+COPY experiments /app/experiments
 
-# Set the entrypoint
-ENTRYPOINT ["python", "main.py"]
+# No ENTRYPOINT, allow user to specify script via docker run command
+# Example: docker run <image_name> python main.py --env_name Pendulum-v1
+# Example: docker run <image_name> python experiments/quick_benchmark.py
+
+# Default command (optional, can be overridden)
+CMD ["python", "main.py", "--help"]
