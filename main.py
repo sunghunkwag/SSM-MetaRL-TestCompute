@@ -27,7 +27,7 @@ def train(args):
     # Initialize model
     model = StateSpaceModel(
         state_dim=args.state_dim,
-        input_dim=args.state_dim,
+        input_dim=args.state_dim,  # input_dim matches state_dim
         output_dim=1
     ).to(device)
     
@@ -43,11 +43,19 @@ def train(args):
     # Simplified meta-training loop
     for epoch in range(args.num_epochs):
         # Create dummy task data
-        task_data = torch.randn(args.batch_size, 10, args.state_dim).to(device)
+        B, T, D = args.batch_size, 10, args.state_dim
+        
+        # [FIX] Reshape data to be compatible with SSM (B*T, D)
+        support_x = torch.randn(B, T, D).to(device).reshape(B * T, D)
+        
+        # [FIX] Create dummy support_y (targets) which was missing
+        support_y = torch.randn(B * T, 1).to(device) # model output_dim is 1
         
         # MetaMAML adapt returns OrderedDict of fast_weights
         from collections import OrderedDict
-        fast_weights = meta_maml.adapt(task_data, n_steps=5)
+        
+        # [FIXED] Call adapt with correct args: support_x, support_y, and 'num_steps'
+        fast_weights = meta_maml.adapt(support_x, support_y, num_steps=5)
         
         # Verify return type
         assert isinstance(fast_weights, OrderedDict), \
@@ -92,10 +100,21 @@ def test_adaptation(args, model):
         # Create batch_dict
         states = torch.randn(args.batch_size, args.state_dim).to(device)
         targets = torch.randn(args.batch_size, 1).to(device)
-        batch_dict = {'states': states, 'targets': targets}
         
-        # Adapter.adapt(loss_fn, batch_dict) -> dict with 'loss', 'steps', etc.
-        info = adapter.adapt(loss_fn, batch_dict)
+        # [FIX] The model's forward is 'x', not 'states'.
+        # We must provide the correct key or use a wrapper.
+        batch_dict = {'x': states, 'targets': targets}
+        
+        # Define wrapper functions for fwd and loss
+        # (This part is needed because batch_dict contains 'targets', 
+        # which the model.forward() doesn't accept)
+        def fwd_fn(batch):
+            return adapter.target(batch['x'])
+            
+        def loss_fn_wrapper(outputs, batch):
+            return loss_fn(outputs, batch['targets'])
+
+        info = adapter.adapt(loss_fn_wrapper, batch_dict, fwd_fn=fwd_fn)
         
         # Verify return type and extract loss from dict
         assert isinstance(info, dict), \
