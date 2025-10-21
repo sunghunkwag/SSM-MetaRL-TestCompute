@@ -39,7 +39,19 @@ class TestAdapter:
     def adapter(self, model, config):
         """Create Adapter instance."""
         return Adapter(model, config)
-    
+
+    # [FIX] Helper function for correct fwd/loss calls
+    def _run_adapt(self, adapter, loss_fn, batch_dict):
+        def fwd_fn(batch):
+            # Model forward expects 'x'
+            return adapter.target(batch['x'])
+            
+        def loss_fn_wrapper(outputs, batch):
+            # Loss fn compares against 'targets'
+            return loss_fn(outputs, batch['targets'])
+        
+        return adapter.adapt(loss_fn_wrapper, batch_dict, fwd_fn=fwd_fn)
+
     def test_adapt_returns_dict(self, adapter):
         """
         Test that adapt() returns dict (info).
@@ -48,10 +60,11 @@ class TestAdapter:
         loss_fn = nn.MSELoss()
         states = torch.randn(8, 4)
         targets = torch.randn(8, 1)
-        batch_dict = {'states': states, 'targets': targets}
+        # [FIX] Model forward expects 'x', not 'states'
+        batch_dict = {'x': states, 'targets': targets}
         
-        # Call adapt
-        result = adapter.adapt(loss_fn, batch_dict)
+        # Call adapt [FIX] using wrapper
+        result = self._run_adapt(adapter, loss_fn, batch_dict)
         
         # Verify return type is dict
         assert isinstance(result, dict), \
@@ -64,9 +77,11 @@ class TestAdapter:
         loss_fn = nn.MSELoss()
         states = torch.randn(8, 4)
         targets = torch.randn(8, 1)
-        batch_dict = {'states': states, 'targets': targets}
+        # [FIX] Model forward expects 'x'
+        batch_dict = {'x': states, 'targets': targets}
         
-        info = adapter.adapt(loss_fn, batch_dict)
+        # [FIX] using wrapper
+        info = self._run_adapt(adapter, loss_fn, batch_dict)
         
         # Verify it's a dict
         assert isinstance(info, dict)
@@ -87,9 +102,11 @@ class TestAdapter:
         loss_fn = nn.MSELoss()
         states = torch.randn(8, 4)
         targets = torch.randn(8, 1)
-        batch_dict = {'states': states, 'targets': targets}
+        # [FIX] Model forward expects 'x'
+        batch_dict = {'x': states, 'targets': targets}
         
-        info = adapter.adapt(loss_fn, batch_dict)
+        # [FIX] using wrapper
+        info = self._run_adapt(adapter, loss_fn, batch_dict)
         
         # Verify 'steps' key exists
         assert 'steps' in info, \
@@ -108,10 +125,11 @@ class TestAdapter:
         loss_fn = nn.MSELoss()
         states = torch.randn(8, 4)
         targets = torch.randn(8, 1)
-        batch_dict = {'states': states, 'targets': targets}
+        # [FIX] Model forward expects 'x'
+        batch_dict = {'x': states, 'targets': targets}
         
-        # Get info dict from adapt
-        info = adapter.adapt(loss_fn, batch_dict)
+        # Get info dict from adapt [FIX] using wrapper
+        info = self._run_adapt(adapter, loss_fn, batch_dict)
         
         # Verify type
         assert isinstance(info, dict)
@@ -134,9 +152,11 @@ class TestAdapter:
         for i in range(5):
             states = torch.randn(8, 4)
             targets = torch.randn(8, 1)
-            batch_dict = {'states': states, 'targets': targets}
+            # [FIX] Model forward expects 'x'
+            batch_dict = {'x': states, 'targets': targets}
             
-            info = adapter.adapt(loss_fn, batch_dict)
+            # [FIX] using wrapper
+            info = self._run_adapt(adapter, loss_fn, batch_dict)
             
             # Always returns dict
             assert isinstance(info, dict), \
