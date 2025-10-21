@@ -24,7 +24,7 @@ def collect_data(env, policy_model, num_episodes=10, max_steps_per_episode=100, 
     all_obs, all_actions, all_rewards, all_next_obs, all_dones = [], [], [], [], []
     policy_model.eval()
     
-    obs, _ = env.reset() # Gymnasium returns (obs, info)
+    obs = env.reset() # Environment wrapper returns obs only for batch_size=1
     hidden_state = policy_model.init_hidden(batch_size=env.batch_size)
     
     total_steps = 0
@@ -39,13 +39,14 @@ def collect_data(env, policy_model, num_episodes=10, max_steps_per_episode=100, 
                 action_logits, next_hidden_state = policy_model(obs_tensor, hidden_state)
                 
                 if isinstance(env.action_space, gym.spaces.Discrete):
-                    probs = torch.softmax(action_logits, dim=-1)
+                    # Use only the first n_actions dimensions for discrete action spaces
+                    n_actions = env.action_space.n
+                    probs = torch.softmax(action_logits[:, :n_actions], dim=-1)
                     action = torch.multinomial(probs, 1).item()
                 else:
                     action = action_logits.cpu().numpy().flatten()
             
-            next_obs, reward, done, truncated, info = env.step(action) # Gymnasium returns 5 values
-            done = done or truncated # Combine done and truncated
+            next_obs, reward, done, info = env.step(action) # Environment wrapper returns 4 values
             
             all_obs.append(obs)
             all_actions.append(action)
@@ -59,7 +60,7 @@ def collect_data(env, policy_model, num_episodes=10, max_steps_per_episode=100, 
             total_steps += 1
         
         # Reset at the end of an episode
-        obs, _ = env.reset()
+        obs = env.reset()
         hidden_state = policy_model.init_hidden(batch_size=env.batch_size)
             
     # Return as single sequence (Batch=1, Time=T, Dim=D)
@@ -150,7 +151,7 @@ def test_time_adapt(args, model, env, device):
     adapter = Adapter(model=model, config=config, device=device)
     
     # Initialize hidden state
-    obs, _ = env.reset()
+    obs = env.reset()
     hidden_state = model.init_hidden(batch_size=1) # This is state_t
     
     for step in range(args.num_adapt_steps): # Total adaptation steps
@@ -170,8 +171,7 @@ def test_time_adapt(args, model, env, device):
             action = env.action_space.sample()
         
         # 3. Step environment
-        next_obs, reward, done, truncated, info = env.step(action)
-        done = done or truncated
+        next_obs, reward, done, info = env.step(action) # Environment wrapper returns 4 values
         next_obs_tensor = torch.tensor(next_obs, dtype=torch.float32).unsqueeze(0).to(device) # target_t+1
         
         # 4. Adapt using (obs_t, target_t+1, state_t)
@@ -185,7 +185,7 @@ def test_time_adapt(args, model, env, device):
         obs = next_obs
         
         if done:
-            obs, _ = env.reset()
+            obs = env.reset()
             hidden_state = model.init_hidden(batch_size=1) # Reset state
         
         if step % 10 == 0:

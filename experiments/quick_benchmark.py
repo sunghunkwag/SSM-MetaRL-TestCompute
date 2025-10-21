@@ -7,7 +7,7 @@ FIXED: Calls MetaMAML API correctly matching main.py and meta_maml.py definition
 import torch
 import torch.nn as nn
 from collections import OrderedDict
-import nn_functional as F # Assuming correct loss function import if needed
+import torch.nn.functional as F
 
 from core.ssm import StateSpaceModel
 from meta_rl.meta_maml import MetaMAML
