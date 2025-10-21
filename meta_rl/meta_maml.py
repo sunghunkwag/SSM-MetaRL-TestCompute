@@ -40,44 +40,7 @@ class MetaMAML:
         first_order: If True, use first-order MAML (no second-order gradients)
     
     Example:
-        >>> # Example 1: Simple Sequential Network
-        >>> model = nn.Sequential(
-        ...     nn.Linear(10, 64),
-        ...     nn.ReLU(),
-        ...     nn.Linear(64, 1)
-        ... )
-        >>> meta_learner = MetaMAML(model, inner_lr=0.01, outer_lr=0.001)
-        >>> 
-        >>> # Example 2: Custom Network with Residual Connections
-        >>> class ResidualNet(nn.Module):
-        ...     def __init__(self):
-        ...         super().__init__()
-        ...         self.fc1 = nn.Linear(10, 64)
-        ...         self.fc2 = nn.Linear(64, 64)
-        ...         self.fc3 = nn.Linear(64, 1)
-        ...     
-        ...     def forward(self, x):
-        ...         identity = x
-        ...         out = F.relu(self.fc1(x))
-        ...         out = self.fc2(out)
-        ...         out = out + self.fc1(identity)  # Residual
-        ...         return self.fc3(F.relu(out))
-        >>> 
-        >>> model = ResidualNet()
-        >>> meta_learner = MetaMAML(model, inner_lr=0.01)
-        >>> 
-        >>> # Example 3: RNN/LSTM Model
-        >>> class LSTMPolicy(nn.Module):
-        ...     def __init__(self):
-        ...         super().__init__()
-        ...         self.lstm = nn.LSTM(10, 64, batch_first=True)
-        ...         self.fc = nn.Linear(64, 1)
-        ...     
-        ...     def forward(self, x):
-        ...         out, _ = self.lstm(x)
-        ...         return self.fc(out[:, -1, :])
-        >>> 
-        >>> model = LSTMPolicy()
+        >>> # ... (model definitions) ...
         >>> meta_learner = MetaMAML(model, inner_lr=0.01)
         >>> 
         >>> # Usage in all cases:
@@ -85,7 +48,7 @@ class MetaMAML:
         >>> query_x, query_y = ..., ...
         >>> 
         >>> # Inner loop adaptation
-        >>> fast_weights = meta_learner.adapt(support_x, support_y, num_steps=5)
+        >>> fast_weights = meta_learner.adapt_task(support_x, support_y, num_steps=5)
         >>> 
         >>> # Evaluate with adapted weights
         >>> pred = meta_learner.functional_forward(query_x, fast_weights)
@@ -116,30 +79,6 @@ class MetaMAML:
         
         Returns:
             Output tensor from forward pass with custom parameters
-        
-        Example:
-            >>> # Works with any model structure:
-            >>> model = YourCustomModel()  # Any nn.Module
-            >>> meta_learner = MetaMAML(model)
-            >>> 
-            >>> # Get current parameters
-            >>> params = OrderedDict(model.named_parameters())
-            >>> 
-            >>> # Modify some parameters (e.g., gradient update)
-            >>> grads = torch.autograd.grad(loss, params.values(), create_graph=True)
-            >>> fast_weights = OrderedDict()
-            >>> for (name, param), grad in zip(params.items(), grads):
-            ...     fast_weights[name] = param - inner_lr * grad
-            >>> 
-            >>> # Forward with adapted weights
-            >>> output = meta_learner.functional_forward(x, fast_weights)
-            >>> 
-            >>> # The method handles:
-            >>> # - Simple Sequential models
-            >>> # - Models with branches/residuals
-            >>> # - RNN/LSTM/GRU with cell states
-            >>> # - SSM (State Space Models)
-            >>> # - Any custom nn.Module with arbitrary structure
         """
         if params is None:
             return self.model(x)
@@ -148,8 +87,8 @@ class MetaMAML:
         # This automatically handles all parameter replacement recursively
         return functional_call(self.model, params, x)
     
-    def adapt(self, support_x: torch.Tensor, support_y: torch.Tensor,
-             loss_fn=None, num_steps: int = 1) -> OrderedDictType[str, torch.Tensor]:
+    def adapt_task(self, support_x: torch.Tensor, support_y: torch.Tensor,
+                   loss_fn=None, num_steps: int = 1) -> OrderedDictType[str, torch.Tensor]:
         """Perform inner loop adaptation on support set.
         
         Args:
@@ -198,7 +137,7 @@ class MetaMAML:
         meta_loss = 0.0
         
         for support_x, support_y, query_x, query_y in tasks:
-            fast_weights = self.adapt(support_x, support_y, loss_fn)
+            fast_weights = self.adapt_task(support_x, support_y, loss_fn)
             pred = self.functional_forward(query_x, fast_weights)
             loss = loss_fn(pred, query_y)
             meta_loss += loss
