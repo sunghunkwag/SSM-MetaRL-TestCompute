@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 Unit tests for MetaMAML implementation.
-Tests that adapt() returns OrderedDict (fast_weights).
+Tests that adapt_task() returns OrderedDict (fast_weights).
 """
 
 import pytest
@@ -35,37 +35,37 @@ class TestMetaMAML:
     
     def test_adapt_returns_ordered_dict(self, maml):
         """
-        Test that adapt() returns OrderedDict (fast_weights).
+        Test that adapt_task() returns OrderedDict (fast_weights).
         This is the core requirement for consistency.
         """
         # Create task data
         B, T, D_in = 8, 10, 4
         D_out = 1
         
-        # [FIX] Reshape data and create targets
+        # Reshape data and create targets
         support_x = torch.randn(B, T, D_in).reshape(B * T, D_in)
         support_y = torch.randn(B * T, D_out)
         
-        # Call adapt [FIXED] using support_y and 'num_steps'
-        result = maml.adapt(support_x, support_y, num_steps=5)
+        # Call adapt_task using support_y and 'num_steps'
+        result = maml.adapt_task(support_x, support_y, num_steps=5)
         
         # Verify return type is OrderedDict
         assert isinstance(result, OrderedDict), \
-            f"Expected OrderedDict from adapt(), got {type(result)}"
+            f"Expected OrderedDict from adapt_task(), got {type(result)}"
     
     def test_adapt_returns_weights(self, maml):
         """
-        Test that adapt() returns a dictionary containing model parameters.
+        Test that adapt_task() returns a dictionary containing model parameters.
         """
         B, T, D_in = 8, 10, 4
         D_out = 1
         
-        # [FIX] Reshape data and create targets
+        # Reshape data and create targets
         support_x = torch.randn(B, T, D_in).reshape(B * T, D_in)
         support_y = torch.randn(B * T, D_out)
         
-        # [FIXED] using support_y and 'num_steps'
-        fast_weights = maml.adapt(support_x, support_y, num_steps=3)
+        # using support_y and 'num_steps'
+        fast_weights = maml.adapt_task(support_x, support_y, num_steps=3)
         
         # Verify it's an OrderedDict
         assert isinstance(fast_weights, OrderedDict)
@@ -79,18 +79,18 @@ class TestMetaMAML:
     
     def test_adapt_with_multiple_steps(self, maml):
         """
-        Test adapt() with different numbers of adaptation steps.
+        Test adapt_task() with different numbers of adaptation steps.
         """
         B, T, D_in = 8, 10, 4
         D_out = 1
         
-        # [FIX] Reshape data and create targets
+        # Reshape data and create targets
         support_x = torch.randn(B, T, D_in).reshape(B * T, D_in)
         support_y = torch.randn(B * T, D_out)
         
         for n_steps in [1, 3, 5, 10]:
-            # [FIXED] using support_y and 'num_steps'
-            fast_weights = maml.adapt(support_x, support_y, num_steps=n_steps)
+            # using support_y and 'num_steps'
+            fast_weights = maml.adapt_task(support_x, support_y, num_steps=n_steps)
             
             # Always returns OrderedDict regardless of n_steps
             assert isinstance(fast_weights, OrderedDict), \
@@ -98,21 +98,21 @@ class TestMetaMAML:
     
     def test_adapt_usage_pattern(self, maml):
         """
-        Test the correct usage pattern for adapt() result.
+        Test the correct usage pattern for adapt_task() result.
         Users should receive OrderedDict and use it with forward_with_weights.
         """
         B, T, D_in = 8, 10, 4
         D_out = 1
         
-        # [FIX] Reshape data and create targets
+        # Reshape data and create targets
         support_x = torch.randn(B, T, D_in).reshape(B * T, D_in)
         support_y = torch.randn(B * T, D_out)
         
         test_x = torch.randn(4, 10, 4).reshape(4 * 10, 4)
         
-        # Get fast_weights from adapt
-        # [FIXED] using support_y and 'num_steps'
-        fast_weights = maml.adapt(support_x, support_y, num_steps=5)
+        # Get fast_weights from adapt_task
+        # using support_y and 'num_steps'
+        fast_weights = maml.adapt_task(support_x, support_y, num_steps=5)
         
         # Verify type
         assert isinstance(fast_weights, OrderedDict)
