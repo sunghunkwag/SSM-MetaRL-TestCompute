@@ -27,7 +27,7 @@ def train(args):
     # Initialize model
     model = StateSpaceModel(
         state_dim=args.state_dim,
-        input_dim=args.state_dim,  # input_dim matches state_dim
+        input_dim=args.input_dim,  # Use separate input_dim
         output_dim=1
     ).to(device)
     
@@ -43,23 +43,23 @@ def train(args):
     # Simplified meta-training loop
     for epoch in range(args.num_epochs):
         # Create dummy task data
-        B, T, D = args.batch_size, 10, args.state_dim
+        B, T, D_in = args.batch_size, 10, args.input_dim
         
-        # [FIX] Reshape data to be compatible with SSM (B*T, D)
-        support_x = torch.randn(B, T, D).to(device).reshape(B * T, D)
+        # Reshape data to be compatible with SSM (B*T, D_in)
+        support_x = torch.randn(B, T, D_in).to(device).reshape(B * T, D_in)
         
-        # [FIX] Create dummy support_y (targets) which was missing
+        # Create dummy support_y (targets)
         support_y = torch.randn(B * T, 1).to(device) # model output_dim is 1
         
         # MetaMAML adapt returns OrderedDict of fast_weights
         from collections import OrderedDict
         
-        # [FIXED] Call adapt with correct args: support_x, support_y, and 'num_steps'
-        fast_weights = meta_maml.adapt(support_x, support_y, num_steps=5)
+        # Call adapt_task with correct args
+        fast_weights = meta_maml.adapt_task(support_x, support_y, num_steps=5)
         
         # Verify return type
         assert isinstance(fast_weights, OrderedDict), \
-            f"Expected OrderedDict from meta_maml.adapt, got {type(fast_weights)}"
+            f"Expected OrderedDict from meta_maml.adapt_task, got {type(fast_weights)}"
         
         if epoch % 10 == 0:
             print(f"Epoch {epoch}: Adapted weights obtained (OrderedDict with {len(fast_weights)} parameters)")
@@ -71,7 +71,7 @@ def train(args):
 def test_adaptation(args, model):
     """
     Test model adaptation using Adapter.
-    Adapter.adapt returns a dict with 'loss', 'steps', etc.
+    Adapter.update_step returns a dict with 'loss', 'steps', etc.
     
     Args:
         args: Command-line arguments
@@ -98,29 +98,26 @@ def test_adaptation(args, model):
     
     for step in range(args.num_adapt_steps):
         # Create batch_dict
-        states = torch.randn(args.batch_size, args.state_dim).to(device)
+        states = torch.randn(args.batch_size, args.input_dim).to(device)
         targets = torch.randn(args.batch_size, 1).to(device)
         
-        # [FIX] The model's forward is 'x', not 'states'.
-        # We must provide the correct key or use a wrapper.
+        # The model's forward is 'x', not 'states'.
         batch_dict = {'x': states, 'targets': targets}
         
         # Define wrapper functions for fwd and loss
-        # (This part is needed because batch_dict contains 'targets', 
-        # which the model.forward() doesn't accept)
         def fwd_fn(batch):
             return adapter.target(batch['x'])
             
         def loss_fn_wrapper(outputs, batch):
             return loss_fn(outputs, batch['targets'])
 
-        info = adapter.adapt(loss_fn_wrapper, batch_dict, fwd_fn=fwd_fn)
+        info = adapter.update_step(loss_fn_wrapper, batch_dict, fwd_fn=fwd_fn)
         
         # Verify return type and extract loss from dict
         assert isinstance(info, dict), \
-            f"Expected dict from adapter.adapt, got {type(info)}"
+            f"Expected dict from adapter.update_step, got {type(info)}"
         assert 'loss' in info, \
-            f"Expected 'loss' key in adapter.adapt result, got keys: {info.keys()}"
+            f"Expected 'loss' key in adapter.update_step result, got keys: {info.keys()}"
         
         # Extract loss value from info dict
         loss = info['loss']
@@ -135,6 +132,7 @@ def test_adaptation(args, model):
 def main():
     parser = argparse.ArgumentParser(description="SSM-MetaRL Training and Adaptation")
     parser.add_argument('--state_dim', type=int, default=4, help='State dimension')
+    parser.add_argument('--input_dim', type=int, default=4, help='Input dimension')
     parser.add_argument('--num_epochs', type=int, default=50, help='Number of training epochs')
     parser.add_argument('--batch_size', type=int, default=8, help='Batch size')
     parser.add_argument('--inner_lr', type=float, default=0.01, help='Inner learning rate for MetaMAML')
