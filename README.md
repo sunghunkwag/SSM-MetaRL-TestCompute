@@ -4,15 +4,15 @@ A research framework combining State Space Models (SSM), Meta-Learning (MAML), a
 ## Project Structure
 
 - **core/**: Core model implementations
-  - `ssm.py`: State Space Model implementation (now returns state)
+  - `ssm.py`: State Space Model implementation (returns state)
 - **meta_rl/**: Meta-learning algorithms
   - `meta_maml.py`: MetaMAML implementation (handles stateful models and time series input)
 - **adaptation/**: Test-time adaptation
-  - `test_time_adaptation.py`: Adapter class (manages hidden state updates)
+  - `test_time_adaptation.py`: Adapter class (API updated, manages hidden state updates internally)
 - **env_runner/**: Environment utilities
   - `environment.py`: Gymnasium environment wrapper
 - **experiments/**: Experiment scripts and benchmarks
-  - `quick_benchmark.py`: Quick benchmark suite
+  - `quick_benchmark.py`: Quick benchmark suite (updated MAML API calls)
 - **tests/**: Test suite for all components (includes parameter mutation verification)
 
 ## Core Components
@@ -21,9 +21,9 @@ A research framework combining State Space Models (SSM), Meta-Learning (MAML), a
 
 The SSM implementation in `core/ssm.py` models state transitions.
 
-**Key Changes**:
-- `forward(x, hidden_state)` now returns a tuple: `(output, next_hidden_state)`. It no longer modifies internal state directly.
-- A new method `init_hidden(batch_size)` is provided to get the initial hidden state.
+**API**:
+- `forward(x, hidden_state)` returns a tuple: `(output, next_hidden_state)`.
+- `init_hidden(batch_size)` provides the initial hidden state.
 
 Constructor Arguments:
 - `state_dim` (int): Internal state dimension
@@ -40,33 +40,32 @@ from core.ssm import SSM
 model = SSM(state_dim=128, input_dim=64, output_dim=32, device='cpu')
 batch_size = 4
 input_x = torch.randn(batch_size, 64)
-current_hidden = model.init_hidden(batch_size)
+current_hidden = model.init_hidden(batch_size) #
 
 # Forward pass requires current state and returns next state
-output, next_hidden = model(input_x, current_hidden)
+output, next_hidden = model(input_x, current_hidden) #
 print(output.shape)       # torch.Size([4, 32])
 print(next_hidden.shape)  # torch.Size([4, 128])
-```
+````
 
 ### MetaMAML
 
 The `MetaMAML` class in `meta_rl/meta_maml.py` implements MAML.
 
 **Key Changes**:
-- Now correctly handles **stateful models** (like the modified SSM) where `forward` takes `hidden_state` and returns `(output, next_state)`.
-- Supports **time series input** in `(B, T, D)` format where B=batch, T=time steps, D=features.
-- During inner loop adaptation, properly manages hidden state across time steps.
+
+  - Correctly handles **stateful models** (like SSM).
+  - Supports **time series input** `(B, T, D)`.
+  - **API Update**: `meta_update` now takes `tasks` (a list of tuples) and `initial_hidden_state` as arguments.
 
 **Time Series Input Handling**:
-When passing time series data to MetaMAML, the input should be shaped as `(batch_size, time_steps, features)`. The MAML algorithm will:
-1. Initialize hidden state for each task
-2. Process each time step sequentially
-3. Update hidden state at each step
-4. Compute loss over the entire sequence
+Input data should be shaped `(batch_size, time_steps, features)`. MAML processes sequences internally.
 
-Example with time series:
+Example with time series (Updated API):
+
 ```python
 import torch
+import torch.nn.functional as F
 from meta_rl.meta_maml import MetaMAML
 from core.ssm import SSM
 
@@ -75,152 +74,102 @@ maml = MetaMAML(model, inner_lr=0.01, outer_lr=0.001)
 
 # Time series input: (batch=4, time_steps=10, features=32)
 support_x = torch.randn(4, 10, 32)
-support_y = torch.randn(4, 10, 16)
+support_y = torch.randn(4, 10, 16) # Example target
 query_x = torch.randn(4, 10, 32)
-query_y = torch.randn(4, 10, 16)
+query_y = torch.randn(4, 10, 16) # Example target
 
-# MetaMAML handles time series internally
-tasks = [(support_x[i], support_y[i], query_x[i], query_y[i]) for i in range(4)]
-loss = maml.meta_update(tasks, num_inner_steps=5)
+# Prepare tasks as a list of tuples
+tasks = []
+for i in range(4): # Batch size is 4
+    tasks.append((support_x[i:i+1], support_y[i:i+1], query_x[i:i+1], query_y[i:i+1]))
+
+# Initialize hidden state (assuming same init state for all tasks in batch)
+initial_hidden = model.init_hidden(batch_size=4) #
+
+# Correctly call meta_update with tasks list and initial state
+loss = maml.meta_update(tasks=tasks, initial_hidden_state=initial_hidden, loss_fn=F.mse_loss) #
+print(f"Meta Loss: {loss:.4f}")
 ```
 
 Constructor Arguments:
-- `model`: The base model to meta-train (e.g., SSM)
-- `inner_lr` (float): Inner loop learning rate
-- `outer_lr` (float): Outer loop (meta) learning rate
-- `first_order` (bool): If True, use first-order MAML approximation
+
+  - `model`: The base model.
+  - `inner_lr` (float): Inner loop learning rate.
+  - `outer_lr` (float): Outer loop learning rate.
+  - `first_order` (bool): Use first-order MAML.
 
 ### Adapter (Test-Time Adaptation)
 
 The `Adapter` class in `adaptation/test_time_adaptation.py` performs test-time adaptation.
 
-**Key Changes - Hidden State Management**:
-- The `update_step()` method now accepts a `hidden_state` parameter for stateful models.
-- User code must manage hidden state updates by providing a `fwd_fn` that:
-  1. Takes `(model, x, hidden_state)` as input
-  2. Returns `(output, next_hidden_state)`
-  3. Properly updates hidden state across adaptation steps
+**Key Changes - API and Hidden State Management**:
 
-**Important**: The Adapter does not internally manage hidden states. You must:
-1. Initialize hidden state before calling `update_step()`
-2. Provide a `fwd_fn` that handles state updates
-3. Pass the current `hidden_state` to each `update_step()` call
-4. Update your local hidden state variable after each step
+  - **API Update**: `update_step` now takes `x`, `y` (target), and `hidden_state` directly as arguments. It no longer requires `loss_fn` or `fwd_fn`.
+  - The `Adapter` internally performs `config.num_steps` of gradient updates per `update_step` call, correctly managing the hidden state across these internal steps.
+  - Returns `(loss, steps_taken)`.
 
 Constructor Arguments:
-- `model`: The model to adapt
-- `learning_rate` (float): Learning rate for adaptation
-- `loss_fn`: Loss function (default: MSELoss)
 
-Example usage with hidden state:
+  - `model`: The model to adapt.
+  - `config`: An `AdaptationConfig` object containing `learning_rate` and `num_steps` (internal steps per call).
+  - `device`: Device string ('cpu' or 'cuda').
+
+Example usage with hidden state (Updated API):
+
 ```python
 import torch
-from adaptation.test_time_adaptation import Adapter
+from adaptation.test_time_adaptation import Adapter, AdaptationConfig
 from core.ssm import SSM
 
-model = SSM(state_dim=64, input_dim=32, output_dim=16, device='cpu')
-adapter = Adapter(model, learning_rate=0.01)
-
-# Define forward function that manages hidden state
-def fwd_fn(m, x, h):
-    output, next_h = m(x, h)
-    return output, next_h
+# Model output dim must match target 'y'
+model = SSM(state_dim=64, input_dim=32, output_dim=32, device='cpu') # Predict next state
+config = AdaptationConfig(learning_rate=0.01, num_steps=5) # 5 internal steps per call
+adapter = Adapter(model=model, config=config, device='cpu')
 
 # Initialize hidden state
-hidden_state = model.init_hidden(batch_size=1)
+hidden_state = model.init_hidden(batch_size=1) # state_t
 
-# Adaptation loop with hidden state management
-for step in range(10):
-    x = torch.randn(1, 32)
-    y_target = torch.randn(1, 16)
+# Adaptation loop
+for step in range(10): # Total adaptation calls
+    x = torch.randn(1, 32)         # obs_t
+    y_target = torch.randn(1, 32)  # target_t+1 (e.g., next_obs)
     
-    # Pass current hidden state and get updated state
-    loss, hidden_state = adapter.update_step(
-        x, y_target, 
-        fwd_fn=fwd_fn,
-        hidden_state=hidden_state
+    # Store current state for adaptation call
+    current_hidden_state_for_adapt = hidden_state # state_t
+    
+    # Get next state prediction (optional, for environment interaction)
+    with torch.no_grad():
+        output, hidden_state = model(x, current_hidden_state_for_adapt) # Update hidden_state to state_t+1
+    
+    # Call update_step with x, target, and state_t
+    loss, steps_taken = adapter.update_step(
+        x=x,
+        y=y_target,
+        hidden_state=current_hidden_state_for_adapt # Pass state_t
     )
-    print(f"Step {step}, Loss: {loss.item()}")
+    print(f"Adapt Call {step}, Loss: {loss:.4f}, Internal Steps: {steps_taken}")
+    
+    # hidden_state is now state_t+1 for the next loop iteration
 ```
-
-See `main.py` and `experiments/quick_benchmark.py` for complete examples of hidden state management in environment interaction contexts.
 
 ### Environment Runner
 
-The `env_runner/environment.py` module now exclusively uses `gymnasium` and related wrappers. The old `gym` fallback has been removed.
+Uses `gymnasium`.
 
 ## Main Script (`main.py`)
 
-The `main.py` script demonstrates the complete workflow:
+Demonstrates the complete workflow using the updated APIs.
 
-1. Initializes a `gymnasium` environment using `env_runner`.
-2. Determines SSM `input_dim` and `output_dim` from the environment.
-3. Includes a `collect_data` function that:
-   - Manages hidden state during data collection
-   - Resets hidden state at episode boundaries
-   - Collects (observation, action, reward) tuples
-4. Performs meta-training using `MetaMAML` with time series data (B, T, D format).
-5. Performs test-time adaptation using `Adapter` with proper hidden state management:
-   - Initializes hidden state before adaptation
-   - Provides `fwd_fn` for state updates
-   - Updates hidden state after each step
-6. Accepts `--input_dim` and `--state_dim` as separate arguments.
-
-**Hidden State Management in main.py**:
-```python
-# During data collection
-hidden_state = model.init_hidden(batch_size=1)
-for step in range(max_steps):
-    obs, _ = env.reset() if done else (obs, None)
-    if done:
-        hidden_state = model.init_hidden(batch_size=1)
-    
-    obs_tensor = torch.FloatTensor(obs).unsqueeze(0)
-    action_pred, hidden_state = model(obs_tensor, hidden_state)
-    # ... rest of episode logic
-
-# During test-time adaptation
-def fwd_fn(m, x, h):
-    return m(x, h)
-
-hidden_state = model.init_hidden(batch_size=1)
-for step in range(adaptation_steps):
-    loss, hidden_state = adapter.update_step(
-        x, y, fwd_fn=fwd_fn, hidden_state=hidden_state
-    )
-```
+  - Collects data and returns it as a dictionary of tensors.
+  - Correctly calls `MetaMAML.meta_update` with `tasks` list and `initial_hidden_state`.
+  - Correctly calls `Adapter.update_step` with `x`, `y` (target), and the correct `hidden_state` (state\_t).
+  - Sets SSM `output_dim` to match the target dimension (e.g., `input_dim` if predicting next observation).
 
 ## Experiments
 
 ### Quick Benchmark (`experiments/quick_benchmark.py`)
 
-The quick benchmark demonstrates:
-1. **Time series input to MAML** without flattening (preserves B, T, D shape)
-2. **Hidden state management** in Adapter with `fwd_fn`
-3. Comparison between meta-trained and baseline models
-
-Key implementation details:
-```python
-# Time series input (B=num_tasks, T=seq_length, D=input_dim)
-support_x = torch.randn(num_tasks, seq_length, input_dim)
-support_y = torch.randn(num_tasks, seq_length, output_dim)
-
-# Pass to MAML without reshaping
-tasks = [(support_x[i], support_y[i], query_x[i], query_y[i]) 
-         for i in range(num_tasks)]
-loss = meta_learner.meta_update(tasks, num_inner_steps=5)
-
-# Adapter with hidden state
-def fwd_fn(m, x, h):
-    return m(x, h)
-
-hidden = model.init_hidden(batch_size=1)
-for i in range(test_steps):
-    loss, hidden = adapter.update_step(
-        test_x[i:i+1], test_y[i:i+1],
-        fwd_fn=fwd_fn, hidden_state=hidden
-    )
-```
+Updated to use the correct API calls for `MetaMAML` and `Adapter`.
 
 ## Running Tests
 
@@ -232,47 +181,16 @@ pytest
 
 ### Test Suite Highlights
 
-**Parameter Mutation Verification** (`tests/test_adaptation.py`):
-- Tests verify that `Adapter.update_step()` actually mutates model parameters
-- Uses `copy.deepcopy` to save initial parameters
-- Compares parameters after adaptation using `torch.equal`
-- Ensures gradient-based updates are working correctly
-
-Example from tests:
-```python
-import copy
-import torch
-
-# Save initial parameters
-initial_params = {name: copy.deepcopy(param) 
-                  for name, param in model.named_parameters()}
-
-# Perform adaptation
-for step in range(num_steps):
-    loss, hidden = adapter.update_step(
-        x, y, fwd_fn=fwd_fn, hidden_state=hidden
-    )
-
-# Verify parameters changed
-for name, param in model.named_parameters():
-    assert not torch.equal(param, initial_params[name]), \
-        f"Parameter {name} was not updated"
-```
-
-**Other Test Files**:
-- `tests/test_ssm.py`: Tests SSM state transitions and output shapes
-- `tests/test_meta_rl.py`: Tests MetaMAML with time series input
-
-The `core/test_ssm.py` file has been moved to `tests/test_ssm.py`.
+  - `tests/test_adaptation.py`: Includes parameter mutation verification using `torch.equal`.
+  - `tests/test_ssm.py`: Tests SSM API.
+  - `tests/test_meta_rl.py`: Tests MetaMAML API.
 
 ## Installation & Setup
 
-This project uses `pyproject.toml` for packaging. The `setup.py` file is deprecated and has been removed.
-
-**Python Version**: Requires Python >= 3.8. CI tests run on 3.8, 3.9, 3.10, 3.11.
+Uses `pyproject.toml`. Requires Python \>= 3.8.
 
 ```bash
-git clone https://github.com/sunghunkwag/SSM-MetaRL-TestCompute.git
+git clone [https://github.com/sunghunkwag/SSM-MetaRL-TestCompute.git](https://github.com/sunghunkwag/SSM-MetaRL-TestCompute.git)
 cd SSM-MetaRL-TestCompute
 pip install .
 
@@ -282,28 +200,34 @@ pip install -e .[dev]
 
 ## Docker Usage
 
-The `Dockerfile` now uses a multi-stage build for efficiency and no longer sets a default `ENTRYPOINT`.
+Uses multi-stage build.
 
-**Build the image:**
+**Build:**
+
 ```bash
 docker build -t ssm-metarl .
 ```
 
-**Run experiments:**
+**Run:**
+
 ```bash
-# Run the main example script with a specific environment
+# Run main script
 docker run ssm-metarl python main.py --env_name Pendulum-v1 --num_epochs 10
 
-# Run the benchmark script
+# Run benchmark
 docker run ssm-metarl python experiments/quick_benchmark.py
 ```
 
-## Summary of Key Changes
+## Summary of Key Changes (Latest Version)
 
-1. **SSM**: Returns `(output, next_hidden_state)` instead of modifying internal state
-2. **MetaMAML**: Handles time series input `(B, T, D)` and stateful models correctly
-3. **Adapter**: Requires user to manage hidden state via `fwd_fn` and `hidden_state` parameter
-4. **Tests**: Include parameter mutation verification to ensure updates work correctly
-5. **main.py & quick_benchmark.py**: Show complete examples of hidden state management
+1.  **SSM**: API unchanged (`forward` returns `(output, next_state)`).
+2.  **MetaMAML**: API unchanged (`meta_update` takes `tasks` list and `initial_hidden_state`).
+3.  **Adapter**: API changed (`update_step` takes `x`, `y`, `hidden_state`). Manages state updates internally across `num_steps`.
+4.  **main.py**: Updated to use correct MetaMAML and Adapter API calls and logic.
+5.  **experiments/quick\_benchmark.py**: Updated to use correct MetaMAML and Adapter API calls.
+6.  **Tests**: Updated `test_adaptation.py` to match new Adapter API. Includes parameter mutation check.
 
-All user code (`main.py`, `experiments/quick_benchmark.py`, `tests/test_adaptation.py`) has been updated to match these patterns.
+<!-- end list -->
+
+```
+```
