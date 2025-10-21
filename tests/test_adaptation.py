@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 Unit tests for Test-Time Adaptation implementation.
-Tests that adapt() returns dict with 'loss', 'steps', etc.
+Tests that update_step() returns dict with 'loss', 'steps', etc.
 """
 
 import pytest
@@ -40,7 +40,7 @@ class TestAdapter:
         """Create Adapter instance."""
         return Adapter(model, config)
 
-    # [FIX] Helper function for correct fwd/loss calls
+    # Helper function for correct fwd/loss calls
     def _run_adapt(self, adapter, loss_fn, batch_dict):
         def fwd_fn(batch):
             # Model forward expects 'x'
@@ -50,37 +50,37 @@ class TestAdapter:
             # Loss fn compares against 'targets'
             return loss_fn(outputs, batch['targets'])
         
-        return adapter.adapt(loss_fn_wrapper, batch_dict, fwd_fn=fwd_fn)
+        return adapter.update_step(loss_fn_wrapper, batch_dict, fwd_fn=fwd_fn)
 
     def test_adapt_returns_dict(self, adapter):
         """
-        Test that adapt() returns dict (info).
+        Test that update_step() returns dict (info).
         This is the core requirement for consistency.
         """
         loss_fn = nn.MSELoss()
         states = torch.randn(8, 4)
         targets = torch.randn(8, 1)
-        # [FIX] Model forward expects 'x', not 'states'
+        # Model forward expects 'x', not 'states'
         batch_dict = {'x': states, 'targets': targets}
         
-        # Call adapt [FIX] using wrapper
+        # Call adapt using wrapper
         result = self._run_adapt(adapter, loss_fn, batch_dict)
         
         # Verify return type is dict
         assert isinstance(result, dict), \
-            f"Expected dict from adapt(), got {type(result)}"
+            f"Expected dict from update_step(), got {type(result)}"
     
     def test_adapt_contains_loss_key(self, adapter):
         """
-        Test that adapt() result contains 'loss' key.
+        Test that update_step() result contains 'loss' key.
         """
         loss_fn = nn.MSELoss()
         states = torch.randn(8, 4)
         targets = torch.randn(8, 1)
-        # [FIX] Model forward expects 'x'
+        # Model forward expects 'x'
         batch_dict = {'x': states, 'targets': targets}
         
-        # [FIX] using wrapper
+        # using wrapper
         info = self._run_adapt(adapter, loss_fn, batch_dict)
         
         # Verify it's a dict
@@ -97,15 +97,15 @@ class TestAdapter:
     
     def test_adapt_contains_steps_key(self, adapter):
         """
-        Test that adapt() result contains 'steps' key.
+        Test that update_step() result contains 'steps' key.
         """
         loss_fn = nn.MSELoss()
         states = torch.randn(8, 4)
         targets = torch.randn(8, 1)
-        # [FIX] Model forward expects 'x'
+        # Model forward expects 'x'
         batch_dict = {'x': states, 'targets': targets}
         
-        # [FIX] using wrapper
+        # using wrapper
         info = self._run_adapt(adapter, loss_fn, batch_dict)
         
         # Verify 'steps' key exists
@@ -119,16 +119,16 @@ class TestAdapter:
     
     def test_adapt_usage_pattern(self, adapter):
         """
-        Test the correct usage pattern for adapt() result.
+        Test the correct usage pattern for update_step() result.
         Users should extract loss from the returned dict.
         """
         loss_fn = nn.MSELoss()
         states = torch.randn(8, 4)
         targets = torch.randn(8, 1)
-        # [FIX] Model forward expects 'x'
+        # Model forward expects 'x'
         batch_dict = {'x': states, 'targets': targets}
         
-        # Get info dict from adapt [FIX] using wrapper
+        # Get info dict from adapt using wrapper
         info = self._run_adapt(adapter, loss_fn, batch_dict)
         
         # Verify type
@@ -145,17 +145,17 @@ class TestAdapter:
     
     def test_adapt_multiple_calls(self, adapter):
         """
-        Test that multiple adapt() calls consistently return dict.
+        Test that multiple update_step() calls consistently return dict.
         """
         loss_fn = nn.MSELoss()
         
         for i in range(5):
             states = torch.randn(8, 4)
             targets = torch.randn(8, 1)
-            # [FIX] Model forward expects 'x'
+            # Model forward expects 'x'
             batch_dict = {'x': states, 'targets': targets}
             
-            # [FIX] using wrapper
+            # using wrapper
             info = self._run_adapt(adapter, loss_fn, batch_dict)
             
             # Always returns dict
