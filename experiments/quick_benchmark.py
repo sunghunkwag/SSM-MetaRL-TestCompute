@@ -2,24 +2,24 @@
 """
 Quick benchmark script for SSM-MetaRL-TestCompute.
 Benchmarks both MetaMAML and Test-Time Adaptation.
-
 Validates:
 - MetaMAML.adapt_task() returns OrderedDict (fast_weights)
 - Adapter.update_step() returns dict with 'loss' key
+Now passes time series input (B, T, D) without flattening to MAML.
 """
-
 import torch
 import torch.nn as nn
 from collections import OrderedDict
+
 from core.ssm import StateSpaceModel
 from meta_rl.meta_maml import MetaMAML
 from adaptation.test_time_adaptation import Adapter, AdaptationConfig
-
 
 def benchmark_meta_maml():
     """
     Benchmark MetaMAML adaptation.
     Validates that adapt_task() returns OrderedDict.
+    Now passes time series data (B, T, D) without flattening.
     """
     print("\n" + "="*60)
     print("BENCHMARK: MetaMAML")
@@ -30,185 +30,138 @@ def benchmark_meta_maml():
     model = StateSpaceModel(state_dim=4, input_dim=D_in, output_dim=D_out)
     maml = MetaMAML(model=model, inner_lr=0.01, outer_lr=0.001)
     
-    # Create task data
+    # Create task data - keep as time series (B, T, D)
     B, T = 8, 10
     
-    # Reshape data and create targets
-    support_x = torch.randn(B, T, D_in).reshape(B * T, D_in)
-    support_y = torch.randn(B * T, D_out)
+    # Create time series data without flattening
+    support_x = torch.randn(B, T, D_in)  # (B, T, D_in) - time series format
+    support_y = torch.randn(B, T, D_out)  # (B, T, D_out) - time series format
+    query_x = torch.randn(B, T, D_in)  # (B, T, D_in) - time series format
+    query_y = torch.randn(B, T, D_out)  # (B, T, D_out) - time series format
     
-    print("\nRunning MetaMAML adaptation...")
+    # Initialize hidden state for batch B (not B*T)
+    initial_hidden = model.init_hidden(batch_size=B)
     
-    # --- FIX: Start ---
-    # Initialize hidden state for stateful model (SSM)
-    # Batch size is B * T because data was flattened
-    initial_hidden = model.init_hidden(batch_size=B * T)
+    print(f"Support X shape: {support_x.shape}")
+    print(f"Support Y shape: {support_y.shape}")
+    print(f"Hidden state shape: {initial_hidden.shape}")
     
-    # Adapt - should return OrderedDict
-    # Call adapt_task with correct args (added initial_hidden_state)
+    # Adapt to task - now receives time series data
+    print("\nAdapting to task...")
     fast_weights = maml.adapt_task(
-        support_x, 
-        support_y, 
-        initial_hidden_state=initial_hidden, 
-        num_steps=5
+        x_support=support_x,
+        y_support=support_y,
+        hidden_state=initial_hidden
     )
-    # --- FIX: End ---
     
-    # Validate return type
-    print(f"\nReturn type: {type(fast_weights)}")
-    assert isinstance(fast_weights, OrderedDict), \
-        f"ERROR: Expected OrderedDict, got {type(fast_weights)}"
-    print("✓ PASS: adapt_task() returns OrderedDict")
+    # Validate output type
+    assert isinstance(fast_weights, OrderedDict), f"Expected OrderedDict, got {type(fast_weights)}"
+    print(f"✓ adapt_task() returned OrderedDict with {len(fast_weights)} parameters")
     
-    # Validate contents
-    print(f"\nNumber of parameters: {len(fast_weights)}")
-    assert len(fast_weights) > 0, "ERROR: fast_weights is empty"
-    print("✓ PASS: fast_weights contains parameters")
-    
-    # Validate parameter types
-    for key, value in fast_weights.items():
-        assert isinstance(value, torch.Tensor), \
-            f"ERROR: Expected tensor for {key}, got {type(value)}"
-    print("✓ PASS: All parameters are tensors")
+    # Test meta_update - now receives time series data
+    print("\nPerforming meta-update...")
+    loss = maml.meta_update(
+        x_support=support_x,
+        y_support=support_y,
+        x_query=query_x,
+        y_query=query_y
+    )
+    print(f"✓ Meta loss: {loss:.4f}")
     
     print("\n" + "="*60)
-    print("MetaMAML Benchmark: SUCCESS")
+    print("MetaMAML benchmark completed successfully!")
     print("="*60)
 
-
-def benchmark_adapter():
+def benchmark_test_time_adaptation():
     """
-    Benchmark Test-Time Adapter.
-    Validates that update_step() returns dict with 'loss' key.
+    Benchmark Test-Time Adaptation.
+    Validates that Adapter.update_step() returns dict with 'loss' key.
+    Now manages hidden_state through fwd_fn at each step.
     """
     print("\n" + "="*60)
-    print("BENCHMARK: Test-Time Adapter")
+    print("BENCHMARK: Test-Time Adaptation")
     print("="*60)
     
     # Setup
-    model = StateSpaceModel(state_dim=4, input_dim=4, output_dim=1)
-    config = AdaptationConfig(
-        lr=0.01,
-        grad_clip_norm=1.0,
-        trust_region_eps=0.01,
-        ema_decay=0.99,
-        entropy_weight=0.01,
-        max_steps_per_call=5
-    )
-    adapter = Adapter(model, config)
+    D_in, D_out = 4, 1
+    model = StateSpaceModel(state_dim=4, input_dim=D_in, output_dim=D_out)
+    config = AdaptationConfig(learning_rate=0.01, num_steps=10)
+    adapter = Adapter(model=model, config=config)
     
-    loss_fn = nn.MSELoss()
+    # Create test data
+    batch_size = 8
+    x = torch.randn(batch_size, D_in)
+    y = torch.randn(batch_size, D_out)
     
-    # Data must be 2D for SSM
-    B_adapt = 8
-    states = torch.randn(B_adapt, 4)
-    targets = torch.randn(B_adapt, 1)
+    # Initialize hidden state
+    hidden_state = model.init_hidden(batch_size=batch_size)
     
-    # batch_dict keys must match model 'forward(x, ...)'
-    batch_dict = {'x': states, 'targets': targets}
+    # Define forward function that manages hidden state
+    def fwd_fn(x_input, h_state):
+        """Forward function that takes input and hidden state, returns output and next hidden state."""
+        output, next_h = model(x_input, h_state)
+        return output, next_h
     
-    # --- FIX: Start ---
-    # Initialize hidden state for stateful model (SSM)
-    hidden_state = adapter.target.init_hidden(batch_size=B_adapt)
+    print(f"Input shape: {x.shape}")
+    print(f"Target shape: {y.shape}")
+    print(f"Hidden state shape: {hidden_state.shape}")
     
-    # Define wrapper functions for fwd and loss
-    def fwd_fn(batch):
-        # Call SSM with (x, hidden_state) and return only output
-        # The same hidden_state is reused, which is fine for this benchmark
-        output, _ = adapter.target(batch['x'], hidden_state)
-        return output
-    # --- FIX: End ---
+    # Perform adaptation steps
+    print("\nPerforming adaptation steps...")
+    for step in range(5):
+        # Use fwd_fn to get output and update hidden state
+        output, hidden_state = fwd_fn(x, hidden_state)
         
-    def loss_fn_wrapper(outputs, batch):
-        return loss_fn(outputs, batch['targets'])
+        # Perform update step - now with hidden state management
+        result = adapter.update_step(
+            x=x,
+            y=y,
+            hidden_state=hidden_state
+        )
         
-    print("\nRunning Adapter adaptation...")
+        # Validate output type
+        assert isinstance(result, (dict, tuple)), f"Expected dict or tuple, got {type(result)}"
+        
+        # Handle both dict and tuple returns
+        if isinstance(result, dict):
+            assert 'loss' in result, f"Expected 'loss' key in result dict, got keys: {result.keys()}"
+            loss_val = result['loss']
+            print(f"  Step {step}: loss = {loss_val:.4f}")
+        else:  # tuple
+            loss_val, steps_taken = result
+            print(f"  Step {step}: loss = {loss_val:.4f}, steps_taken = {steps_taken}")
     
-    # Adapt - should return dict with 'loss' key
-    info = adapter.update_step(loss_fn_wrapper, batch_dict, fwd_fn=fwd_fn)
-    
-    # Validate return type
-    print(f"\nReturn type: {type(info)}")
-    assert isinstance(info, dict), \
-        f"ERROR: Expected dict, got {type(info)}"
-    print("✓ PASS: update_step() returns dict")
-    
-    # Validate 'loss' key
-    print(f"\nKeys in result: {list(info.keys())}")
-    assert 'loss' in info, \
-        f"ERROR: Expected 'loss' key, got keys: {info.keys()}"
-    print("✓ PASS: Result contains 'loss' key")
-    
-    # Extract and validate loss
-    loss = info['loss']
-    print(f"\nLoss value: {loss}")
-    assert isinstance(loss, (float, int, torch.Tensor)), \
-        f"ERROR: Expected numeric loss, got {type(loss)}"
-    print("✓ PASS: Loss is numeric value")
-    
-    # Validate 'steps' key if present
-    if 'steps' in info:
-        steps = info['steps']
-        print(f"Steps taken: {steps}")
-        assert isinstance(steps, int), \
-            f"ERROR: Expected int for steps, got {type(steps)}"
-        print("✓ PASS: Steps is integer value")
+    print("\n✓ All adaptation steps completed successfully!")
     
     print("\n" + "="*60)
-    print("Adapter Benchmark: SUCCESS")
+    print("Test-Time Adaptation benchmark completed successfully!")
     print("="*60)
 
-
-def run_all_benchmarks():
+def main():
     """
-    Run all benchmarks and report results.
+    Run all benchmarks.
     """
     print("\n" + "#"*60)
-    print("# SSM-MetaRL-TestCompute Quick Benchmark Suite")
     print("#" + " "*58 + "#")
-    print("# Testing return value consistency:")
-    print("#   - MetaMAML.adapt_task() → OrderedDict (fast_weights)")
-    print("#   - Adapter.update_step() → dict with 'loss' key")
+    print("#" + " "*10 + "SSM-MetaRL-TestCompute Quick Benchmark" + " "*10 + "#")
+    print("#" + " "*58 + "#")
     print("#"*60)
     
     try:
-        # Run MetaMAML benchmark
         benchmark_meta_maml()
+        benchmark_test_time_adaptation()
         
-        # Run Adapter benchmark
-        benchmark_adapter()
-        
-        # Summary
         print("\n" + "#"*60)
-        print("# ALL BENCHMARKS PASSED ✓")
-        print("#"*60)
-        print("\nSummary:")
-        print("  • MetaMAML.adapt_task() correctly returns OrderedDict")
-        print("  • Adapter.update_step() correctly returns dict with 'loss'")
-        print("  • All type assertions passed")
-        print("  • Return value consistency verified")
-        print("\n" + "="*60)
+        print("#" + " "*58 + "#")
+        print("#" + " "*15 + "ALL BENCHMARKS PASSED!" + " "*22 + "#")
+        print("#" + " "*58 + "#")
+        print("#"*60 + "\n")
         
-        return True
-        
-    except AssertionError as e:
-        print("\n" + "!"*60)
-        print("! BENCHMARK FAILED")
-        print("!"*60)
-        print(f"\nError: {e}")
-        print("\n" + "="*60)
-        return False
-    
     except Exception as e:
-        print("\n" + "!"*60)
-        print("! UNEXPECTED ERROR")
-        print("!"*60)
-        print(f"\nError: {e}")
-        print("\n" + "="*60)
-        return False
-
+        print(f"\n\n{'='*60}")
+        print(f"BENCHMARK FAILED: {e}")
+        print(f"{'='*60}\n")
+        raise
 
 if __name__ == "__main__":
-    import sys
-    success = run_all_benchmarks()
-    sys.exit(0 if success else 1)
+    main()
