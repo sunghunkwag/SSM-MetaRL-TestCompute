@@ -1,28 +1,21 @@
 """Environment Runner Module for SSM-MetaRL
 
-This module implements an RL environment runner using actual OpenAI Gym
+This module implements an RL environment runner using Gymnasium
 environments for meta-RL tasks. It supports both single and batched
 environments with proper reset/step functionality.
 
 References:
-- OpenAI Gym: https://github.com/openai/gym
 - Gymnasium: https://github.com/Farama-Foundation/Gymnasium
 """
 
 import numpy as np
 from typing import Dict, List, Tuple, Optional, Any, Union
-import gym
+import gymnasium as gym
 import warnings
-
-try:
-    import gymnasium as gym_new
-    HAS_GYMNASIUM = True
-except ImportError:
-    HAS_GYMNASIUM = False
 
 
 class Environment:
-    """Environment wrapper for Meta-RL tasks using OpenAI Gym.
+    """Environment wrapper for Meta-RL tasks using Gymnasium.
     
     This class provides a unified interface for managing RL environments
     with actual gym.make() calls and proper reset/step functionality.
@@ -56,23 +49,16 @@ class Environment:
         self.envs = []
         for i in range(batch_size):
             try:
-                # Try gymnasium first if available
-                if HAS_GYMNASIUM:
-                    try:
-                        env = gym_new.make(env_name)
-                    except:
-                        # Fallback to old gym
-                        env = gym.make(env_name)
-                else:
-                    env = gym.make(env_name)
+                # Use Gymnasium directly
+                env = gym.make(env_name)
                 
                 # Set max episode steps if specified
                 if max_episode_steps is not None:
-                    env._max_episode_steps = max_episode_steps
+                    env = gym.wrappers.TimeLimit(env, max_episode_steps)
                 
                 # Set seed
                 if seed is not None:
-                    env.seed(seed + i)
+                    env.reset(seed=seed + i)
                 
                 self.envs.append(env)
             except Exception as e:
@@ -99,17 +85,20 @@ class Environment:
                 self.action_space = gym.spaces.Discrete(2)
                 self.state = None
             
-            def reset(self):
+            def reset(self, seed=None):
+                if seed is not None:
+                    np.random.seed(seed)
                 self.state = self.observation_space.sample()
-                return self.state
+                return self.state, {} # Gymnasium returns (obs, info)
             
             def step(self, action):
                 next_state = self.observation_space.sample()
                 reward = np.random.randn()
                 done = np.random.rand() < 0.05  # 5% chance of episode end
+                truncated = False
                 info = {}
                 self.state = next_state
-                return next_state, reward, done, info
+                return next_state, reward, done, truncated, info
             
             def seed(self, seed):
                 np.random.seed(seed)
@@ -135,11 +124,8 @@ class Environment:
         observations = []
         
         for i, env in enumerate(self.envs):
-            obs = env.reset()
-            
-            # Handle both old gym (returns obs) and new gymnasium (returns obs, info)
-            if isinstance(obs, tuple):
-                obs = obs[0]  # New gymnasium format
+            # Gymnasium returns (obs, info)
+            obs, info = env.reset()
             
             observations.append(np.array(obs, dtype=np.float32))
             
@@ -178,14 +164,9 @@ class Environment:
         
         for i, (env, action) in enumerate(zip(self.envs, actions)):
             # Execute step
-            result = env.step(action)
-            
-            # Handle both old gym (4 returns) and new gymnasium (5 returns with truncated)
-            if len(result) == 5:
-                obs, reward, done, truncated, info = result
-                done = done or truncated  # Combine done and truncated
-            else:
-                obs, reward, done, info = result
+            # Gymnasium returns (obs, reward, done, truncated, info)
+            obs, reward, done, truncated, info = env.step(action)
+            done = done or truncated  # Combine done and truncated
             
             observations.append(np.array(obs, dtype=np.float32))
             rewards.append(float(reward))
@@ -225,10 +206,10 @@ class Environment:
         """
         if self.envs:
             try:
-                return self.envs[0].render(mode=mode)
-            except:
-                # Some environments might not support mode parameter
+                # Gymnasium render mode is often set at make()
                 return self.envs[0].render()
+            except:
+                pass # Handle different render setups
     
     def close(self) -> None:
         """Close all environments."""
