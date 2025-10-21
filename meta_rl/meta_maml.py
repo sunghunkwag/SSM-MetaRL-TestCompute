@@ -1,40 +1,24 @@
 """Meta-RL Module: Meta-MAML Implementation with Functional Forward Pass
 This module implements proper MAML (Model-Agnostic Meta-Learning) with
 functional forward passes using custom weights (fast_weights).
-
 Key Features:
 - Proper functional forward pass with custom parameters
 - Inner loop adaptation using fast_weights
 - Outer loop meta-optimization
 - Compatible with ANY PyTorch nn.Module model (Sequential, custom, RNN, SSM, etc.)
 - Automatic recursive fast_weights application to all parameters/submodules
-
 References:
 - MAML: Finn et al. "Model-Agnostic Meta-Learning for Fast Adaptation of Deep Networks"
-
 Author: SSM-MetaRL Team
 Date: 2025-10-20
 """
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from typing import Dict, List, Tuple, Optional, OrderedDict as OrderedDictType
 from collections import OrderedDict
-import copy
 
-try:
-    from torch.func import functional_call
-    TORCH_FUNC_AVAILABLE = True
-except ImportError:
-    try:
-        from functorch import make_functional_with_buffers
-        TORCH_FUNC_AVAILABLE = False
-        FUNCTORCH_AVAILABLE = True
-    except ImportError:
-        TORCH_FUNC_AVAILABLE = False
-        FUNCTORCH_AVAILABLE = False
-
+from torch.func import functional_call
 
 class MetaMAML:
     """Model-Agnostic Meta-Learning (MAML) implementation.
@@ -115,12 +99,6 @@ class MetaMAML:
         self.outer_lr = outer_lr
         self.first_order = first_order
         self.meta_optimizer = torch.optim.Adam(self.model.parameters(), lr=outer_lr)
-        
-        # Check available functional API
-        self.use_torch_func = TORCH_FUNC_AVAILABLE
-        if not self.use_torch_func and not FUNCTORCH_AVAILABLE:
-            print("Warning: Neither torch.func nor functorch available. "
-                  "Using manual parameter replacement (slower).")
     
     def functional_forward(self, x: torch.Tensor,
                           params: Optional[OrderedDictType[str, torch.Tensor]] = None) -> torch.Tensor:
@@ -166,46 +144,9 @@ class MetaMAML:
         if params is None:
             return self.model(x)
         
-        if self.use_torch_func:
-            # Use torch.func.functional_call (PyTorch >= 2.0)
-            # This automatically handles all parameter replacement recursively
-            return functional_call(self.model, params, x)
-        else:
-            # Fallback: Manual recursive parameter replacement
-            return self._manual_functional_forward(x, params)
-    
-    def _manual_functional_forward(self, x: torch.Tensor,
-                                   params: OrderedDictType[str, torch.Tensor]) -> torch.Tensor:
-        """Manual implementation of functional forward for when torch.func is unavailable.
-        Recursively replaces parameters in the model with fast_weights.
-        """
-        model_copy = copy.deepcopy(self.model)
-        self._replace_params_recursive(model_copy, params)
-        
-        with torch.no_grad():
-            output = model_copy(x)
-        
-        return output
-    
-    def _replace_params_recursive(self, module: nn.Module,
-                                  params: OrderedDictType[str, torch.Tensor], prefix: str = ''):
-        """Recursively replace parameters in all submodules.
-        
-        Args:
-            module: Current module to process
-            params: Dictionary of parameters to use
-            prefix: Current parameter name prefix (for recursion)
-        """
-        for name, param in list(module._parameters.items()):
-            if param is not None:
-                full_name = f"{prefix}.{name}" if prefix else name
-                if full_name in params:
-                    module._parameters[name] = params[full_name]
-        
-        for name, submodule in module._modules.items():
-            if submodule is not None:
-                sub_prefix = f"{prefix}.{name}" if prefix else name
-                self._replace_params_recursive(submodule, params, sub_prefix)
+        # Use torch.func.functional_call (PyTorch >= 2.0)
+        # This automatically handles all parameter replacement recursively
+        return functional_call(self.model, params, x)
     
     def adapt(self, support_x: torch.Tensor, support_y: torch.Tensor,
              loss_fn=None, num_steps: int = 1) -> OrderedDictType[str, torch.Tensor]:
