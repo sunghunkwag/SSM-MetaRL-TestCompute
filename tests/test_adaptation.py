@@ -8,6 +8,7 @@ import pytest
 import torch
 import torch.nn as nn
 import copy
+
 from adaptation.test_time_adaptation import Adapter, AdaptationConfig
 from core.ssm import StateSpaceModel
 
@@ -208,6 +209,10 @@ def test_full_adaptation_pipeline():
     for step in range(5):
         # Forward pass with hidden state management
         output, hidden_state = model(x, hidden_state)
+        
+        # CRITICAL FIX: Detach hidden_state to prevent "backward through the graph a second time" error
+        # This breaks the connection to the previous computational graph
+        hidden_state = hidden_state.detach()
         
         # Adaptation step
         result = adapter.update_step(x=x, y=y, hidden_state=hidden_state)
