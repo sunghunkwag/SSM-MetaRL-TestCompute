@@ -1,0 +1,64 @@
+name: Manual Container Build & Push
+on:
+  workflow_dispatch:
+    inputs:
+      tag_version:
+        description: 'Container tag version (e.g., v1.0.0, latest)'
+        required: false
+        default: 'latest'
+        type: string
+      push_to_ghcr:
+        description: 'Push to GitHub Container Registry'
+        required: false
+        default: true
+        type: boolean
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository_owner }}/ssm-metarl-testcompute
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=${{ github.event.inputs.tag_version }}
+            type=ref,event=branch
+            type=sha,prefix={{branch}}-
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: ${{ github.event.inputs.push_to_ghcr }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          platforms: linux/amd64
+
+      - name: Output image information
+        run: |
+          echo "Built and pushed the following tags:"
+          echo "${{ steps.meta.outputs.tags }}"
+          echo ""
+          echo "Image should be available at:"
+          echo "https://github.com/users/${{ github.repository_owner }}/packages/container/package/ssm-metarl-testcompute"
