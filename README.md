@@ -2,9 +2,10 @@
 
 A research framework combining State Space Models (SSM), Meta-Learning (MAML), and Test-Time Adaptation for reinforcement learning.
 
-[![Tests](https://img.shields.io/badge/tests-18%2F19%20passing-brightgreen)](https://github.com/sunghunkwag/SSM-MetaRL-TestCompute)
+[![Tests](https://img.shields.io/badge/tests-passing-brightgreen)](https://github.com/sunghunkwag/SSM-MetaRL-TestCompute)
 [![Python](https://img.shields.io/badge/python-3.8%2B-blue)](https://www.python.org/)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+[![Docker](https://img.shields.io/badge/docker-automated-blue)](https://github.com/users/sunghunkwag/packages/container/package/ssm-metarl-testcompute)
 
 ## Features
 
@@ -13,7 +14,8 @@ A research framework combining State Space Models (SSM), Meta-Learning (MAML), a
 - **Test-Time Adaptation** for online model improvement
 - **Modular Architecture** with clean, testable components
 - **Gymnasium Integration** for RL environment compatibility
-- **Comprehensive Test Suite** with 94.7% pass rate
+- **Comprehensive Test Suite** with automated CI/CD
+- **Docker Container** ready for deployment
 
 ## Project Structure
 
@@ -40,6 +42,19 @@ pip install -e .
 
 # For development:
 pip install -e .[dev]
+```
+
+### Docker Installation (Recommended)
+
+```bash
+# Pull the latest container
+docker pull ghcr.io/sunghunkwag/ssm-metarl-testcompute:latest
+
+# Run main script
+docker run --rm ghcr.io/sunghunkwag/ssm-metarl-testcompute:latest python main.py --env_name CartPole-v1
+
+# Run benchmark
+docker run --rm ghcr.io/sunghunkwag/ssm-metarl-testcompute:latest python experiments/quick_benchmark.py
 ```
 
 ### Run Main Script
@@ -70,7 +85,8 @@ The framework has been thoroughly tested with the following results:
 
 | Test Category | Status | Pass Rate |
 |--------------|--------|-----------|
-| Unit Tests | ✅ 18/19 | 94.7% |
+| Unit Tests | ✅ All Passing | 100% |
+| CI/CD Pipeline | ✅ Automated | Python 3.8-3.11 |
 | CartPole-v1 | ✅ Passed | Loss reduction: 91.5% - 93.7% |
 | Pendulum-v1 | ✅ Passed | Loss reduction: 95.9% |
 | Benchmarks | ✅ Passed | Loss reduction: 86.8% |
@@ -81,6 +97,7 @@ The framework has been thoroughly tested with the following results:
 - ✅ MetaMAML - Meta-learning operational
 - ✅ Test-Time Adaptation - Adaptation effects confirmed
 - ✅ Environment Runner - Multiple environments supported
+- ✅ Docker Container - Automated builds and deployment
 
 ## Core Components
 
@@ -102,9 +119,9 @@ Constructor Arguments:
 Example usage:
 ```python
 import torch
-from core.ssm import SSM
+from core.ssm import StateSpaceModel
 
-model = SSM(state_dim=128, input_dim=64, output_dim=32, device='cpu')
+model = StateSpaceModel(state_dim=128, input_dim=64, output_dim=32, device='cpu')
 batch_size = 4
 input_x = torch.randn(batch_size, 64)
 current_hidden = model.init_hidden(batch_size)
@@ -133,9 +150,9 @@ Example with time series:
 import torch
 import torch.nn.functional as F
 from meta_rl.meta_maml import MetaMAML
-from core.ssm import SSM
+from core.ssm import StateSpaceModel
 
-model = SSM(state_dim=64, input_dim=32, output_dim=16, device='cpu')
+model = StateSpaceModel(state_dim=64, input_dim=32, output_dim=16, device='cpu')
 maml = MetaMAML(model, inner_lr=0.01, outer_lr=0.001)
 
 # Time series input: (batch=4, time_steps=10, features=32)
@@ -170,6 +187,7 @@ The `Adapter` class in `adaptation/test_time_adaptation.py` performs test-time a
 **Key Features**:
 - **API**: `update_step` takes `x`, `y` (target), and `hidden_state` directly as arguments.
 - Internally performs `config.num_steps` gradient updates per call.
+- **FIXED**: Properly detaches hidden state to prevent autograd computational graph errors.
 - Correctly manages hidden state across internal steps.
 - Returns `(loss, steps_taken)`.
 
@@ -183,10 +201,10 @@ Example usage:
 ```python
 import torch
 from adaptation.test_time_adaptation import Adapter, AdaptationConfig
-from core.ssm import SSM
+from core.ssm import StateSpaceModel
 
 # Model output dim must match target 'y'
-model = SSM(state_dim=64, input_dim=32, output_dim=32, device='cpu')
+model = StateSpaceModel(state_dim=64, input_dim=32, output_dim=32, device='cpu')
 config = AdaptationConfig(learning_rate=0.01, num_steps=5)
 adapter = Adapter(model=model, config=config, device='cpu')
 
@@ -245,9 +263,19 @@ Runs a quick benchmark across multiple configurations to verify the framework's 
 
 ## Docker Usage
 
-Uses multi-stage build for efficient containerization.
+Uses multi-stage build for efficient containerization with automated CI/CD.
 
-**Build:**
+**Pull Pre-built Container:**
+
+```bash
+# Latest version
+docker pull ghcr.io/sunghunkwag/ssm-metarl-testcompute:latest
+
+# Specific version
+docker pull ghcr.io/sunghunkwag/ssm-metarl-testcompute:main
+```
+
+**Build Locally:**
 
 ```bash
 docker build -t ssm-metarl .
@@ -257,39 +285,54 @@ docker build -t ssm-metarl .
 
 ```bash
 # Run main script
-docker run ssm-metarl python main.py --env_name Pendulum-v1 --num_epochs 10
+docker run --rm ghcr.io/sunghunkwag/ssm-metarl-testcompute:latest python main.py --env_name Pendulum-v1 --num_epochs 10
 
 # Run benchmark
-docker run ssm-metarl python experiments/quick_benchmark.py
+docker run --rm ghcr.io/sunghunkwag/ssm-metarl-testcompute:latest python experiments/quick_benchmark.py
 
 # Run tests
-docker run ssm-metarl pytest
+docker run --rm ghcr.io/sunghunkwag/ssm-metarl-testcompute:latest pytest
 ```
 
-## Recent Updates (v1.1.0)
+## Recent Updates (v1.2.0)
 
-### Fixed Issues
+### Critical Fixes (Latest)
 
-1. **Environment API Compatibility** (Commit: acbd1cf)
+1. **PyTorch Autograd Error Fix** (Commit: e084cf6)
+   - **FIXED**: Added `hidden_state.detach()` in adaptation loop
+   - **Problem**: Computational graph was being reused across gradient steps
+   - **Solution**: Detach hidden state to prevent autograd errors
+   - **Impact**: All tests now pass, adaptation works correctly
+
+2. **Environment API Compatibility** (Commit: acbd1cf)
    - Fixed `env.reset()` to match Environment wrapper return values
    - Fixed `env.step()` to handle 4 return values instead of 5
    - Updated in 4 locations across `main.py`
 
-2. **Action Space Handling** (Commit: acbd1cf)
+3. **Action Space Handling** (Commit: acbd1cf)
    - Added dimension slicing for discrete action spaces
    - Prevents errors when model output_dim > action_space.n
    - Ensures valid action sampling
 
-3. **Import Fixes** (Commit: acbd1cf)
+4. **Import Fixes** (Commit: acbd1cf)
    - Fixed incorrect import in `experiments/quick_benchmark.py`
    - Changed `import nn_functional as F` to `import torch.nn.functional as F`
 
-### Test Results After Fixes
+### Test Results After All Fixes
 
-All scripts now run successfully:
+All components now work correctly:
 - ✅ `main.py` works with CartPole-v1 and Pendulum-v1
 - ✅ `experiments/quick_benchmark.py` runs without errors
-- ✅ 18 out of 19 unit tests pass (94.7% success rate)
+- ✅ All unit tests pass (100% success rate)
+- ✅ CI/CD pipeline passes on Python 3.8, 3.9, 3.10, 3.11
+- ✅ Docker container builds and runs successfully
+
+### Container Deployment
+
+- **Automated builds** on every commit to main branch
+- **Multi-stage Docker build** for optimized image size
+- **Available on GitHub Container Registry**: `ghcr.io/sunghunkwag/ssm-metarl-testcompute`
+- **Tags**: `latest`, `main`, `sha-<commit>`
 
 ## Requirements
 
@@ -327,4 +370,3 @@ This framework builds upon research in:
 - Model-Agnostic Meta-Learning (MAML)
 - Test-time adaptation techniques
 - Reinforcement learning with Gymnasium
-
