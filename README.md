@@ -38,6 +38,14 @@ A research framework combining State Space Models (SSM), Meta-Learning (MAML), a
 
 Run the complete demo in your browser with Google Colab - no installation required!
 
+### Demo Notebook Features
+
+- ✅ **Correct API Usage**: Demonstrates proper MetaMAML and Adapter APIs
+- ✅ **Time Series Handling**: Proper 3D tensor shapes (batch, time, features)
+- ✅ **Hidden State Management**: Correct initialization and propagation
+- ✅ **Visualization**: Loss curves and adaptation progress
+- ✅ **Evaluation**: Model performance metrics
+
 ## Quick Start
 
 ### Installation
@@ -301,7 +309,35 @@ docker run --rm ghcr.io/sunghunkwag/ssm-metarl-testcompute:latest python experim
 docker run --rm ghcr.io/sunghunkwag/ssm-metarl-testcompute:latest pytest
 ```
 
-## Recent Updates (v1.2.0)
+## Recent Updates (v1.3.0)
+
+### Demo Notebook Fixes (Latest)
+
+1. **MetaMAML API Correction** (Commit: TBD)
+   - **FIXED**: Corrected `meta_update()` to use `tasks` list and `initial_hidden_state`
+   - **Problem**: Demo was using non-existent `support_data`/`query_data` parameters
+   - **Solution**: Updated to match actual API: `meta_update(tasks, initial_hidden_state, loss_fn)`
+   - **Impact**: Demo now runs without errors in Colab
+
+2. **Adapter API Correction** (Commit: TBD)
+   - **FIXED**: Replaced non-existent `adapt()` method with `update_step()`
+   - **Problem**: Demo was calling `adapter.adapt(observations, targets)`
+   - **Solution**: Use `update_step(x, y, hidden_state)` in a loop
+   - **Impact**: Proper adaptation with loss tracking
+
+3. **Data Shape Fixes** (Commit: TBD)
+   - **FIXED**: Proper 3D tensor reshaping for time series (batch, time, features)
+   - **Problem**: Data was passed as 2D tensors
+   - **Solution**: Added `.unsqueeze(0)` to create batch dimension
+   - **Impact**: MetaMAML can now process sequences correctly
+
+4. **Hidden State Management** (Commit: TBD)
+   - **FIXED**: Added proper hidden state initialization and propagation
+   - **Problem**: Stateful model wasn't receiving required hidden_state
+   - **Solution**: Initialize with `model.init_hidden()` and pass through all operations
+   - **Impact**: SSM model works correctly with sequential data
+
+### Previous Updates (v1.2.0)
 
 ### Critical Fixes (Latest)
 
