@@ -470,9 +470,7 @@ If you use this framework in your research, please cite:
 }
 ```
 
-## Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## Acknowledgments
 
