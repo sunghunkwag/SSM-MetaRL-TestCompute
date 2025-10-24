@@ -6,6 +6,7 @@ A research framework combining State Space Models (SSM), Meta-Learning (MAML), a
 [![Python](https://img.shields.io/badge/python-3.8%2B-blue)](https://www.python.org/)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![Docker](https://img.shields.io/badge/docker-automated-blue)](https://github.com/users/sunghunkwag/packages/container/package/ssm-metarl-testcompute)
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/sunghunkwag/SSM-MetaRL-TestCompute/blob/main/demo.ipynb)
 
 ## Features
 
@@ -30,6 +31,12 @@ A research framework combining State Space Models (SSM), Meta-Learning (MAML), a
 - **experiments/**: Experiment scripts and benchmarks
   - `quick_benchmark.py`: Quick benchmark suite (updated MAML API calls)
 - **tests/**: Test suite for all components (includes parameter mutation verification)
+
+## 🚀 Try it Now!
+
+**Interactive Demo**: [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/sunghunkwag/SSM-MetaRL-TestCompute/blob/main/demo.ipynb)
+
+Run the complete demo in your browser with Google Colab - no installation required!
 
 ## Quick Start
 
