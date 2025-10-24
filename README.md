@@ -49,6 +49,7 @@ Run the complete demo in your browser with Google Colab - no installation requir
 - ✅ **Hidden State Management**: Correct initialization and propagation
 - ✅ **Visualization**: Loss curves and adaptation progress
 - ✅ **Evaluation**: Model performance metrics
+- ✅ **🆕 Serious Benchmarks Preview**: Introduces high-dimensional MuJoCo tasks and SOTA baseline comparisons
 
 ---
 
