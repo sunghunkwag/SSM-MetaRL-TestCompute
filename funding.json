@@ -1,253 +1,39 @@
 {
+  "version": "0.0.1",
+  "entity": {
+    "type": "individual",
+    "name": "Sung hun kwag",
+    "email": "sunghunkwag@gmail.com",
+    "role": "maintainer",
+    "webpageUrl": "https://github.com/sunghunkwag"
+  },
   "project": {
     "name": "SSM-MetaRL-TestCompute",
-    "description": "State Space Model based Meta-Reinforcement Learning with Test Compute capabilities for AGI research",
-    "version": "1.0.0",
-    "type": "research",
-    "category": "Artificial General Intelligence",
-    "research_areas": [
-      "Meta-Reinforcement Learning",
-      "State Space Models",
-      "Test-Time Compute",
-      "AGI Development",
-      "Neural Architecture"
-    ]
-  },
-  "entity": {
-    "name": "SSM-MetaRL Research Lab",
-    "principal_investigator": "Sung Hun Kwag",
-    "github_organization": "sunghunkwag",
-    "repository": "SSM-MetaRL-TestCompute",
-    "contact": "research@ssm-metarl.org",
-    "established": "2024",
-    "location": "Research Institution"
+    "description": "Advanced Meta-Learning Architecture combining State Space Models with Meta-Reinforcement Learning and Test-Time Computation for AGI research",
+    "license": "MIT",
+    "repository": "https://github.com/sunghunkwag/SSM-MetaRL-TestCompute",
+    "tags": ["artificial-intelligence", "meta-learning", "state-space-models", "agi-research", "reinforcement-learning"]
   },
   "funding": {
-    "status": "seeking",
-    "total_requested": {
-      "amount": 2500000,
-      "currency": "USD",
-      "duration": "3 years"
-    },
     "channels": [
       {
-        "id": "fc-001",
-        "type": "government_grant",
-        "name": "National Science Foundation AI Research Grant",
-        "target_amount": 1000000,
-        "currency": "USD",
-        "status": "application_in_progress",
-        "deadline": "2025-12-31",
-        "priority": "high",
-        "notes": "Focus on fundamental AGI research and safety considerations"
-      },
-      {
-        "id": "fc-002",
-        "type": "institutional_funding",
-        "name": "University Research Initiative",
-        "target_amount": 500000,
-        "currency": "USD",
-        "status": "approved",
-        "duration": "2 years",
-        "priority": "high",
-        "notes": "Supporting computational infrastructure and PhD student stipends"
-      },
-      {
-        "id": "fc-003",
-        "type": "private_foundation",
-        "name": "AI Safety Research Foundation",
-        "target_amount": 750000,
-        "currency": "USD",
-        "status": "pending_review",
-        "deadline": "2025-11-15",
-        "priority": "high",
-        "notes": "Emphasis on safe AGI development and alignment research"
-      },
-      {
-        "id": "fc-004",
-        "type": "corporate_sponsorship",
-        "name": "Tech Industry Partnership",
-        "target_amount": 250000,
-        "currency": "USD",
-        "status": "in_negotiation",
-        "priority": "medium",
-        "notes": "Industry collaboration for practical applications of research"
+        "type": "paypal",
+        "address": "sunghunkwag@gmail.com"
       }
     ],
-    "budget_allocation": {
-      "personnel": {
-        "amount": 1200000,
-        "percentage": 48,
-        "description": "Research scientists, PhD students, postdocs, and support staff"
+    "plans": [
+      {
+        "amount": 1000,
+        "currency": "USD",
+        "frequency": "monthly",
+        "description": "Research development and computational resources for AGI architecture advancement"
       },
-      "computational_resources": {
-        "amount": 750000,
-        "percentage": 30,
-        "description": "GPU clusters, cloud compute, data storage, and infrastructure"
-      },
-      "research_materials": {
-        "amount": 200000,
-        "percentage": 8,
-        "description": "Software licenses, datasets, and research tools"
-      },
-      "equipment": {
-        "amount": 175000,
-        "percentage": 7,
-        "description": "Workstations, servers, and specialized hardware"
-      },
-      "conferences_publications": {
-        "amount": 100000,
-        "percentage": 4,
-        "description": "Conference attendance, publication fees, and dissemination"
-      },
-      "overhead_administration": {
-        "amount": 75000,
-        "percentage": 3,
-        "description": "Administrative costs and institutional overhead"
+      {
+        "amount": 5000,
+        "currency": "USD", 
+        "frequency": "one-time",
+        "description": "Major milestone funding for publishing research results and expanding computational infrastructure"
       }
-    }
-  },
-  "plans": {
-    "phase_1": {
-      "name": "Foundation & Architecture",
-      "duration": "Months 1-12",
-      "funding_needed": 850000,
-      "objectives": [
-        "Develop core SSM-based meta-learning architecture",
-        "Implement initial test-time compute mechanisms",
-        "Build baseline evaluation framework",
-        "Establish computational infrastructure"
-      ],
-      "deliverables": [
-        "Working prototype of SSM-MetaRL system",
-        "Technical documentation and architecture papers",
-        "Open-source codebase release",
-        "Benchmark results on standard tasks"
-      ]
-    },
-    "phase_2": {
-      "name": "Scaling & Optimization",
-      "duration": "Months 13-24",
-      "funding_needed": 950000,
-      "objectives": [
-        "Scale architecture to larger model sizes",
-        "Optimize test-time compute efficiency",
-        "Develop advanced meta-learning algorithms",
-        "Conduct extensive empirical studies"
-      ],
-      "deliverables": [
-        "Scaled SSM-MetaRL models with improved performance",
-        "Published research papers in top-tier venues",
-        "Comprehensive benchmarking suite",
-        "Enhanced open-source toolkit"
-      ]
-    },
-    "phase_3": {
-      "name": "AGI Integration & Safety",
-      "duration": "Months 25-36",
-      "funding_needed": 700000,
-      "objectives": [
-        "Integrate AGI-relevant capabilities",
-        "Implement safety and alignment mechanisms",
-        "Develop interpretability tools",
-        "Create practical applications"
-      ],
-      "deliverables": [
-        "Production-ready AGI research platform",
-        "Safety framework and alignment protocols",
-        "Interpretability analysis tools",
-        "Case studies and application demonstrations"
-      ]
-    }
-  },
-  "impact": {
-    "scientific": [
-      "Advance understanding of meta-learning in state space models",
-      "Contribute novel architectures for AGI research",
-      "Develop efficient test-time compute methodologies"
-    ],
-    "societal": [
-      "Promote safe and responsible AGI development",
-      "Foster open-source AI research collaboration",
-      "Train next generation of AI researchers"
-    ],
-    "economic": [
-      "Create tools for practical AI applications",
-      "Enable more efficient use of computational resources",
-      "Facilitate technology transfer to industry"
     ]
-  },
-  "milestones": [
-    {
-      "id": "m1",
-      "description": "Complete core architecture design",
-      "target_date": "2025-Q2",
-      "funding_requirement": 150000
-    },
-    {
-      "id": "m2",
-      "description": "First working prototype demonstration",
-      "target_date": "2025-Q4",
-      "funding_requirement": 300000
-    },
-    {
-      "id": "m3",
-      "description": "Published research in top-tier conference",
-      "target_date": "2026-Q2",
-      "funding_requirement": 200000
-    },
-    {
-      "id": "m4",
-      "description": "Scaled model with benchmark results",
-      "target_date": "2026-Q4",
-      "funding_requirement": 450000
-    },
-    {
-      "id": "m5",
-      "description": "Safety framework implementation",
-      "target_date": "2027-Q2",
-      "funding_requirement": 350000
-    },
-    {
-      "id": "m6",
-      "description": "Production deployment and technology transfer",
-      "target_date": "2027-Q4",
-      "funding_requirement": 350000
-    }
-  ],
-  "collaboration": {
-    "academic_partners": [
-      "Leading AI research universities",
-      "Machine learning research labs",
-      "Cognitive science departments"
-    ],
-    "industry_partners": [
-      "AI technology companies",
-      "Cloud computing providers",
-      "Application domain experts"
-    ],
-    "open_source_community": {
-      "commitment": "All core research outputs will be open-sourced",
-      "license": "MIT/Apache 2.0",
-      "documentation": "Comprehensive tutorials and API documentation",
-      "community_engagement": "Regular workshops, hackathons, and contributor programs"
-    }
-  },
-  "sustainability": {
-    "long_term_vision": "Establish self-sustaining research program through grants, partnerships, and licensing",
-    "revenue_streams": [
-      "Continued research grants",
-      "Industry consulting and partnerships",
-      "Training programs and workshops",
-      "Licensed commercial applications"
-    ],
-    "environmental_consideration": "Focus on compute-efficient methods to reduce carbon footprint of AI research"
-  },
-  "metadata": {
-    "created": "2025-10-29",
-    "version": "1.0",
-    "last_updated": "2025-10-29",
-    "status": "active",
-    "visibility": "public"
   }
 }
