@@ -15,9 +15,9 @@ A research framework combining State Space Models (SSM), Meta-Learning (MAML), a
 - **Test-Time Adaptation** for online model improvement
 - **Modular Architecture** with clean, testable components
 - **Gymnasium Integration** for RL environment compatibility
-- **Comprehensive Test Suite** with automated CI/CD
+- **Test Suite** with automated CI/CD
 - **Docker Container** ready for deployment
-- **🆕 Serious Benchmarks** with high-dimensional MuJoCo tasks and SOTA comparisons
+- **High-dimensional Benchmarks** with MuJoCo tasks and baseline comparisons
 
 ## Project Structure
 
@@ -31,55 +31,55 @@ A research framework combining State Space Models (SSM), Meta-Learning (MAML), a
   - `environment.py`: Gymnasium environment wrapper
 - **experiments/**: Experiment scripts and benchmarks
   - `quick_benchmark.py`: Quick benchmark suite (updated MAML API calls)
-  - `serious_benchmark.py`: High-dimensional MuJoCo benchmarks with SOTA baselines
+  - `serious_benchmark.py`: High-dimensional MuJoCo benchmarks with baseline comparisons
   - `task_distributions.py`: Meta-learning task distributions
   - `baselines.py`: LSTM, GRU, Transformer baseline implementations
 - **tests/**: Test suite for all components (includes parameter mutation verification)
 
-## 🚀 Try it Now!
+## Interactive Demo
 
-**Interactive Demo**: [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/sunghunkwag/SSM-MetaRL-TestCompute/blob/main/demo.ipynb)
+**Try it now**: [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/sunghunkwag/SSM-MetaRL-TestCompute/blob/main/demo.ipynb)
 
 Run the complete demo in your browser with Google Colab - no installation required!
 
 ### Demo Notebook Features
 
-- ✅ **Correct API Usage**: Demonstrates proper MetaMAML and Adapter APIs
-- ✅ **Time Series Handling**: Proper 3D tensor shapes (batch, time, features)
-- ✅ **Hidden State Management**: Correct initialization and propagation
-- ✅ **Visualization**: Loss curves and adaptation progress
-- ✅ **Evaluation**: Model performance metrics
-- ✅ **🆕 Serious Benchmarks Preview**: Introduces high-dimensional MuJoCo tasks and SOTA baseline comparisons
+- Correct API Usage: Demonstrates proper MetaMAML and Adapter APIs
+- Time Series Handling: Proper 3D tensor shapes (batch, time, features)
+- Hidden State Management: Correct initialization and propagation
+- Visualization: Loss curves and adaptation progress
+- Evaluation: Model performance metrics
+- High-dimensional Benchmarks Preview: Introduces MuJoCo tasks and baseline comparisons
 
 ---
 
-## 🏆 Serious Benchmarks
+## Advanced Benchmarks
 
-**Beyond Toy Problems**: We've implemented comprehensive benchmarks on high-dimensional MuJoCo tasks with SOTA baseline comparisons.
+**Beyond Simple Tasks**: We've implemented benchmarks on high-dimensional MuJoCo tasks with baseline comparisons.
 
-### Why This Matters
+### Motivation
 
-The original benchmarks (CartPole, Pendulum) are **toy problems** that don't prove real-world value:
-- ❌ Low dimensional (4-8 state dims)
-- ❌ Simple dynamics
-- ❌ No SOTA comparisons
-- ❌ No scaling validation
+Simple benchmarks (CartPole, Pendulum) have limitations for research validation:
+- Low dimensional (4-8 state dims)
+- Simple dynamics
+- Limited baseline comparisons
+- No scaling validation
 
-### Our Solution
+### Our Approach
 
-✅ **High-Dimensional Tasks**
+**High-Dimensional Tasks**
 - HalfCheetah-v4: 17-dim state, 6-dim action
 - Ant-v4: 27-dim state, 8-dim action
 - Humanoid-v4: 376-dim state, 17-dim action
 
-✅ **SOTA Baseline Comparisons**
+**Baseline Comparisons**
 - LSTM-MAML (76K params, O(n²) complexity)
 - GRU-MAML (57K params, O(n²) complexity)
-- Transformer-MAML (400K params, O(n²) complexity)
+- Transformer-MAML (400K params, O(n²) complexity) 
 - MLP-MAML (20K params, no sequence modeling)
-- **SSM-MAML (53K params, O(n) complexity)** ⚡
+- **SSM-MAML (53K params, O(n) complexity)**
 
-✅ **Meta-Learning Task Distributions**
+**Meta-Learning Task Distributions**
 - Velocity tasks: Different target speeds
 - Direction tasks: Different goal directions
 - Dynamics tasks: Varying gravity/mass
@@ -127,7 +127,7 @@ pip install -e .
 pip install -e .[dev]
 ```
 
-### Docker Installation (Recommended)
+### Docker Installation
 
 ```bash
 # Pull the latest container
@@ -164,7 +164,7 @@ pytest
 
 ## Test Results
 
-The framework has been thoroughly tested with the following results:
+The framework has been tested with the following results:
 
 | Test Category | Status | Pass Rate |
 |--------------|--------|-----------|
@@ -177,7 +177,7 @@ The framework has been thoroughly tested with the following results:
 ### Verified Functionality
 
 - ✅ State Space Model (SSM) - All features working
-- ✅ MetaMAML - Meta-learning operational
+- ✅ MetaMAML - Meta-learning operational  
 - ✅ Test-Time Adaptation - Adaptation effects confirmed
 - ✅ Environment Runner - Multiple environments supported
 - ✅ Docker Container - Automated builds and deployment
@@ -220,9 +220,9 @@ print(next_hidden.shape)  # torch.Size([4, 128])
 The `MetaMAML` class in `meta_rl/meta_maml.py` implements MAML.
 
 **Key Features**:
-- Correctly handles **stateful models** (like SSM).
-- Supports **time series input** `(B, T, D)`.
-- **API**: `meta_update` takes `tasks` (a list of tuples) and `initial_hidden_state` as arguments.
+- Handles **stateful models** (like SSM)
+- Supports **time series input** `(B, T, D)`
+- **API**: `meta_update` takes `tasks` (a list of tuples) and `initial_hidden_state` as arguments
 
 **Time Series Input Handling**:
 Input data should be shaped `(batch_size, time_steps, features)`. MAML processes sequences internally.
@@ -268,11 +268,11 @@ Constructor Arguments:
 The `Adapter` class in `adaptation/test_time_adaptation.py` performs test-time adaptation.
 
 **Key Features**:
-- **API**: `update_step` takes `x`, `y` (target), and `hidden_state` directly as arguments.
-- Internally performs `config.num_steps` gradient updates per call.
-- **FIXED**: Properly detaches hidden state to prevent autograd computational graph errors.
-- Correctly manages hidden state across internal steps.
-- Returns `(loss, steps_taken)`.
+- **API**: `update_step` takes `x`, `y` (target), and `hidden_state` directly as arguments
+- Internally performs `config.num_steps` gradient updates per call
+- Properly detaches hidden state to prevent autograd computational graph errors
+- Manages hidden state across internal steps
+- Returns `(loss, steps_taken)`
 
 Constructor Arguments:
 - `model`: The model to adapt.
@@ -328,10 +328,10 @@ The `Environment` class in `env_runner/environment.py` provides a wrapper around
 
 Demonstrates the complete workflow using the updated APIs.
 
-- Collects data and returns it as a dictionary of tensors.
-- Correctly calls `MetaMAML.meta_update` with `tasks` list and `initial_hidden_state`.
-- Correctly calls `Adapter.update_step` with `x`, `y` (target), and the correct `hidden_state`.
-- Sets SSM `output_dim` to match the target dimension.
+- Collects data and returns it as a dictionary of tensors
+- Calls `MetaMAML.meta_update` with `tasks` list and `initial_hidden_state`
+- Calls `Adapter.update_step` with `x`, `y` (target), and the correct `hidden_state`
+- Sets SSM `output_dim` to match the target dimension
 
 ## Experiments
 
@@ -382,35 +382,33 @@ docker run --rm ghcr.io/sunghunkwag/ssm-metarl-testcompute:latest pytest
 ### Demo Notebook Fixes (Latest)
 
 1. **MetaMAML API Correction** (Commit: TBD)
-   - **FIXED**: Corrected `meta_update()` to use `tasks` list and `initial_hidden_state`
+   - **Fixed**: Corrected `meta_update()` to use `tasks` list and `initial_hidden_state`
    - **Problem**: Demo was using non-existent `support_data`/`query_data` parameters
    - **Solution**: Updated to match actual API: `meta_update(tasks, initial_hidden_state, loss_fn)`
    - **Impact**: Demo now runs without errors in Colab
 
 2. **Adapter API Correction** (Commit: TBD)
-   - **FIXED**: Replaced non-existent `adapt()` method with `update_step()`
+   - **Fixed**: Replaced non-existent `adapt()` method with `update_step()`
    - **Problem**: Demo was calling `adapter.adapt(observations, targets)`
    - **Solution**: Use `update_step(x, y, hidden_state)` in a loop
    - **Impact**: Proper adaptation with loss tracking
 
 3. **Data Shape Fixes** (Commit: TBD)
-   - **FIXED**: Proper 3D tensor reshaping for time series (batch, time, features)
+   - **Fixed**: Proper 3D tensor reshaping for time series (batch, time, features)
    - **Problem**: Data was passed as 2D tensors
    - **Solution**: Added `.unsqueeze(0)` to create batch dimension
    - **Impact**: MetaMAML can now process sequences correctly
 
 4. **Hidden State Management** (Commit: TBD)
-   - **FIXED**: Added proper hidden state initialization and propagation
+   - **Fixed**: Added proper hidden state initialization and propagation
    - **Problem**: Stateful model wasn't receiving required hidden_state
    - **Solution**: Initialize with `model.init_hidden()` and pass through all operations
    - **Impact**: SSM model works correctly with sequential data
 
 ### Previous Updates (v1.2.0)
 
-### Critical Fixes (Latest)
-
 1. **PyTorch Autograd Error Fix** (Commit: e084cf6)
-   - **FIXED**: Added `hidden_state.detach()` in adaptation loop
+   - **Fixed**: Added `hidden_state.detach()` in adaptation loop
    - **Problem**: Computational graph was being reused across gradient steps
    - **Solution**: Detach hidden state to prevent autograd errors
    - **Impact**: All tests now pass, adaptation works correctly
@@ -431,7 +429,7 @@ docker run --rm ghcr.io/sunghunkwag/ssm-metarl-testcompute:latest pytest
 
 ### Test Results After All Fixes
 
-All components now work correctly:
+All components work correctly:
 - ✅ `main.py` works with CartPole-v1 and Pendulum-v1
 - ✅ `experiments/quick_benchmark.py` runs without errors
 - ✅ All unit tests pass (100% success rate)
@@ -469,8 +467,6 @@ If you use this framework in your research, please cite:
   url = {https://github.com/sunghunkwag/SSM-MetaRL-TestCompute}
 }
 ```
-
-
 
 ## Acknowledgments
 
