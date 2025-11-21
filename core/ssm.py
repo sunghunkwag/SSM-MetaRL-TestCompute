@@ -25,6 +25,15 @@ class SSM(nn.Module):
         self.output_dim = output_dim
         self.device = device
 
+        # Store config for reconstruction
+        self.config = {
+            'state_dim': state_dim,
+            'input_dim': input_dim,
+            'output_dim': output_dim,
+            'hidden_dim': hidden_dim,
+            'device': device
+        }
+
         # State transition network (A matrix)
         self.state_transition = nn.Sequential(
             nn.Linear(state_dim, hidden_dim),
@@ -77,24 +86,11 @@ class SSM(nn.Module):
         return final_output, next_hidden_state
 
     def save(self, path: str) -> None:
-        """Save model parameters using torch.save.
-
-        Args:
-            path: Path to save the model
-        """
-        # Create directory if it doesn't exist
-        os.makedirs(os.path.dirname(path) if os.path.dirname(path) else '.', exist_ok=True)
-
-        # Save state dict
+        """Save model state and config for agents to pass around."""
+        os.makedirs(os.path.dirname(path), exist_ok=True)
         torch.save({
             'state_dict': self.state_dict(),
-            'config': {
-                'state_dim': self.state_dim,
-                'input_dim': self.input_dim,
-                'hidden_dim': self.hidden_dim,
-                'output_dim': self.output_dim,
-                'device': self.device
-            }
+            'config': self.config
         }, path)
 
     @staticmethod

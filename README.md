@@ -1,40 +1,47 @@
-# SSM-MetaRL-TestCompute
+# Autonomous-SSM-MetaRL
 
-A research framework combining State Space Models (SSM), Meta-Learning (MAML), and Test-Time Adaptation for reinforcement learning.
+**An Autonomous Research Framework for State Space Models and Meta-Reinforcement Learning**
 
-[![Tests](https://img.shields.io/badge/tests-passing-brightgreen)](https://github.com/sunghunkwag/SSM-MetaRL-TestCompute)
-[![Python](https://img.shields.io/badge/python-3.8%2B-blue)](https://www.python.org/)
-[![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
-[![Docker](https://img.shields.io/badge/docker-automated-blue)](https://github.com/users/sunghunkwag/packages/container/package/ssm-metarl-testcompute)
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/sunghunkwag/SSM-MetaRL-TestCompute/blob/main/demo.ipynb)
+This repository integrates **State Space Models (SSM)** and **Meta-Learning (MAML)** into an autonomous multi-agent framework. Instead of manually tuning hyperparameters or architectures, specialized AI agents collaborate to design, train, and adapt models for high-dimensional reinforcement learning tasks.
 
-## Features
+## 🚀 Key Features
 
-- **State Space Models (SSM)** for temporal dynamics modeling
-- **Meta-Learning (MAML)** for fast adaptation across tasks
-- **Test-Time Adaptation** for online model improvement
-- **Modular Architecture** with clean, testable components
-- **Gymnasium Integration** for RL environment compatibility
-- **Test Suite** with automated CI/CD
-- **Docker Container** ready for deployment
-- **High-dimensional Benchmarks** with MuJoCo tasks and baseline comparisons
+- **Autonomous Experimentation**: Agents design SSM architectures and run experiments autonomously.
+- **Core Integration**:
+  - **Brain**: CrewAI-based Multi-Agent System
+  - **Engine**: PyTorch-based SSM & MAML implementations
+- **Real Implementation**: Tools (`multi_agent/tools`) directly invoke the deep learning core (`core/`), managing model lifecycles and file I/O.
 
-## Project Structure
+## 🛠️ Architecture
 
-- **core/**: Core model implementations
-  - `ssm.py`: State Space Model implementation (returns state)
-- **meta_rl/**: Meta-learning algorithms
-  - `meta_maml.py`: MetaMAML implementation (handles stateful models and time series input)
-- **adaptation/**: Test-time adaptation
-  - `test_time_adaptation.py`: Adapter class (API updated, manages hidden state updates internally)
-- **env_runner/**: Environment utilities
-  - `environment.py`: Gymnasium environment wrapper
-- **experiments/**: Experiment scripts and benchmarks
-  - `quick_benchmark.py`: Quick benchmark suite (updated MAML API calls)
-  - `serious_benchmark.py`: High-dimensional MuJoCo benchmarks with baseline comparisons
-  - `task_distributions.py`: Meta-learning task distributions
-  - `baselines.py`: LSTM, GRU, Transformer baseline implementations
-- **tests/**: Test suite for all components (includes parameter mutation verification)
+1. **State Modeling Agent**: Designing optimal SSM architectures (State Dim, Hidden Dim).
+2. **Meta-Learning Agent**: Optimizing MAML strategies (Inner/Outer LR).
+3. **Coordinator Agent**: Managing the overall research workflow.
+
+## 📂 Project Structure
+
+This structure clearly separates the "Brain" (Agents) from the "Engine" (Core Deep Learning).
+
+```text
+Autonomous-SSM-MetaRL/
+├── core/                   # [Engine] Deep Learning Core (from SSM-MetaRL-TestCompute)
+│   ├── ssm.py              # State Space Model implementation
+├── meta_rl/                # [Engine] Meta-Learning Core
+│   ├── meta_maml.py        # MAML implementation
+├── multi_agent/            # [Brain] Multi-Agent System (from MultiAgent-SSM-MetaRL)
+│   ├── agents/
+│   │   ├── state_modeling_agent.py
+│   ├── tools/
+│   │   ├── ssm_tool.py     # BRIDGE: Connects Agents to PyTorch Core
+│   └── workflows/
+│       ├── research_workflow.py
+├── saved_models/           # Artifacts storage (Model weights, Configs)
+├── main.py                 # Entry point
+├── pyproject.toml          # Dependencies
+└── README.md               # Documentation
+```
+
+(Legacy components `adaptation/`, `experiments/`, `env_runner/` are preserved for engine functionality)
 
 ## Interactive Demo
 
@@ -114,20 +121,24 @@ python experiments/visualize_results.py --results-dir results --output-dir figur
 
 ---
 
-## Quick Start (Simple Demo)
-
-### Installation
+## 📦 Installation
 
 ```bash
-git clone https://github.com/sunghunkwag/SSM-MetaRL-TestCompute.git
-cd SSM-MetaRL-TestCompute
-pip install -e .
+# Clone the repository
+git clone https://github.com/yourusername/Autonomous-SSM-MetaRL.git
+cd Autonomous-SSM-MetaRL
 
-# For development:
-pip install -e .[dev]
+# Install dependencies
+pip install -e .
 ```
 
-### Docker Installation
+## 🏃 Usage
+
+Run the autonomous researcher:
+
+```bash
+python main.py
+```
 
 ```bash
 # Pull the latest container
