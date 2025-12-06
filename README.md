@@ -55,7 +55,7 @@ Run the complete demo in your browser with Google Colab - no installation requir
 
 ## Advanced Benchmarks
 
-**Beyond Simple Tasks**: We've implemented benchmarks on high-dimensional MuJoCo tasks with baseline comparisons.
+Beyond Simple Tasks: I've implemented benchmarks on high-dimensional MuJoCo tasks with baseline comparisons.﻿
 
 ### Motivation
 
