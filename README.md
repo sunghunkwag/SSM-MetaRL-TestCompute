@@ -1,6 +1,6 @@
 # SSM-MetaRL-TestCompute
 
-A research framework combining State Space Models (SSM), Meta-Learning (MAML), and Test-Time Adaptation for reinforcement learning.
+A research framework combining neural state modeling (inspired by State Space Models), Meta-Learning (MAML), and Test-Time Adaptation for reinforcement learning.
 
 [![Tests](https://img.shields.io/badge/tests-passing-brightgreen)](https://github.com/sunghunkwag/SSM-MetaRL-TestCompute)
 [![Python](https://img.shields.io/badge/python-3.8%2B-blue)](https://www.python.org/)
@@ -8,33 +8,71 @@ A research framework combining State Space Models (SSM), Meta-Learning (MAML), a
 [![Docker](https://img.shields.io/badge/docker-automated-blue)](https://github.com/users/sunghunkwag/packages/container/package/ssm-metarl-testcompute)
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/sunghunkwag/SSM-MetaRL-TestCompute/blob/main/demo.ipynb)
 
+## ⚠️ Important Clarification
+
+This framework uses **neural networks with explicit state representation** for temporal modeling, inspired by State Space Model concepts. It is **NOT** a structured SSM like S4/Mamba/LRU.
+
+### What We Have ✅
+
+- Explicit state representation with recurrent processing
+- Residual state transitions using MLPs
+- Meta-learning via MAML for fast adaptation
+- Test-time adaptation with gradient descent
+- Compatible with standard RL environments
+
+### What We Don't Have ❌
+
+- Structured SSM parameterization (HiPPO, diagonal matrices, low-rank, etc.)
+- Continuous-time dynamics with discretization schemes
+- FFT-based convolution mode for parallel processing
+- Sub-quadratic complexity (actual: O(T·d²) per sequence, similar to RNNs)
+
+### Why This Design?
+
+- **Simpler to implement and debug** than structured SSMs
+- **Compatible with existing meta-learning algorithms** (MAML, etc.)
+- **Sufficient for proof-of-concept** experiments and RL tasks
+- **Easier to extend** with custom architectures
+
+### Complexity Analysis
+
+| Component | This Framework | Structured SSM | Traditional RNN |
+|-----------|----------------|----------------|-----------------|
+| Forward pass | O(T·d²) | O(T·d) or O(T log T) | O(T·d²) |
+| Parameters | ~50K | ~50K | ~50K |
+| Parallelizable | ❌ (recurrent) | ✅ (convolution mode) | ❌ (recurrent) |
+
+**Honest assessment**: Our implementation has **similar complexity to GRU/LSTM**, not better. The main contribution is the **meta-learning + adaptation** framework, not the state modeling itself.
+
+---
+
 ## Features
 
-- **State Space Models (SSM)** for temporal dynamics modeling
+- **Neural State Modeling** for temporal dynamics (explicit state with residual transitions)
 - **Meta-Learning (MAML)** for fast adaptation across tasks
 - **Test-Time Adaptation** for online model improvement
 - **Modular Architecture** with clean, testable components
 - **Gymnasium Integration** for RL environment compatibility
 - **Test Suite** with automated CI/CD
 - **Docker Container** ready for deployment
-- **High-dimensional Benchmarks** with MuJoCo tasks and baseline comparisons
+- **Baseline Comparisons** with LSTM, GRU, Transformer implementations
 
 ## Project Structure
 
 - **core/**: Core model implementations
-  - `ssm.py`: State Space Model implementation (returns state)
+  - `ssm.py`: Neural state model (MLP-based state transitions, returns state)
 - **meta_rl/**: Meta-learning algorithms
   - `meta_maml.py`: MetaMAML implementation (handles stateful models and time series input)
 - **adaptation/**: Test-time adaptation
-  - `test_time_adaptation.py`: Adapter class (API updated, manages hidden state updates internally)
+  - `test_time_adaptation.py`: Adapter class (manages hidden state updates internally)
 - **env_runner/**: Environment utilities
   - `environment.py`: Gymnasium environment wrapper
 - **experiments/**: Experiment scripts and benchmarks
-  - `quick_benchmark.py`: Quick benchmark suite (updated MAML API calls)
-  - `serious_benchmark.py`: High-dimensional MuJoCo benchmarks with baseline comparisons
+  - `quick_benchmark.py`: Quick benchmark suite
+  - `serious_benchmark.py`: High-dimensional MuJoCo benchmarks (work in progress)
   - `task_distributions.py`: Meta-learning task distributions
   - `baselines.py`: LSTM, GRU, Transformer baseline implementations
-- **tests/**: Test suite for all components (includes parameter mutation verification)
+- **tests/**: Test suite for all components
 
 ## Interactive Demo
 
@@ -49,13 +87,12 @@ Run the complete demo in your browser with Google Colab - no installation requir
 - Hidden State Management: Correct initialization and propagation
 - Visualization: Loss curves and adaptation progress
 - Evaluation: Model performance metrics
-- High-dimensional Benchmarks Preview: Introduces MuJoCo tasks and baseline comparisons
 
 ---
 
-## Advanced Benchmarks
+## Advanced Benchmarks (Work in Progress)
 
-Beyond Simple Tasks: I've implemented benchmarks on high-dimensional MuJoCo tasks with baseline comparisons.﻿
+We're implementing benchmarks on high-dimensional MuJoCo tasks with baseline comparisons.
 
 ### Motivation
 
@@ -63,9 +100,8 @@ Simple benchmarks (CartPole, Pendulum) have limitations for research validation:
 - Low dimensional (4-8 state dims)
 - Simple dynamics
 - Limited baseline comparisons
-- No scaling validation
 
-### Our Approach
+### Planned Experiments
 
 **High-Dimensional Tasks**
 - HalfCheetah-v4: 17-dim state, 6-dim action
@@ -77,44 +113,13 @@ Simple benchmarks (CartPole, Pendulum) have limitations for research validation:
 - GRU-MAML (57K params, O(n²) complexity)
 - Transformer-MAML (400K params, O(n²) complexity) 
 - MLP-MAML (20K params, no sequence modeling)
-- **SSM-MAML (53K params, O(n) complexity)**
+- **This Framework (53K params, O(n²) complexity, with meta-learning)**
 
-**Meta-Learning Task Distributions**
-- Velocity tasks: Different target speeds
-- Direction tasks: Different goal directions
-- Dynamics tasks: Varying gravity/mass
-
-### Quick Start with Benchmarks
-
-```bash
-# Install MuJoCo dependencies
-pip install 'gymnasium[mujoco]'
-
-# Run benchmark on HalfCheetah-Vel
-python experiments/serious_benchmark.py --task halfcheetah-vel --method ssm --epochs 50
-
-# Compare all methods
-python experiments/serious_benchmark.py --task ant-vel --method all --epochs 100
-
-# Visualize results
-python experiments/visualize_results.py --results-dir results --output-dir figures
-```
-
-### Results Preview
-
-| Method | Parameters | Complexity | HalfCheetah-Vel |
-|--------|------------|------------|----------------|
-| **SSM** | 53K | O(n) | ✅ Tested |
-| LSTM | 76K | O(n²) | ✅ Tested |
-| GRU | 57K | O(n²) | ✅ Tested |
-| Transformer | 400K | O(n²) | ✅ Tested |
-| MLP | 20K | - | ✅ Tested |
-
-**See [experiments/README.md](experiments/README.md) for detailed documentation.**
+**Note**: Full results coming soon. Current focus is on framework correctness and API stability.
 
 ---
 
-## Quick Start (Simple Demo)
+## Quick Start
 
 ### Installation
 
@@ -176,7 +181,7 @@ The framework has been tested with the following results:
 
 ### Verified Functionality
 
-- ✅ State Space Model (SSM) - All features working
+- ✅ Neural State Model - All features working
 - ✅ MetaMAML - Meta-learning operational  
 - ✅ Test-Time Adaptation - Adaptation effects confirmed
 - ✅ Environment Runner - Multiple environments supported
@@ -184,19 +189,25 @@ The framework has been tested with the following results:
 
 ## Core Components
 
-### State Space Model (SSM)
+### State Space Model (core/ssm.py)
 
-The SSM implementation in `core/ssm.py` models state transitions.
+The model in `core/ssm.py` implements neural state transitions with explicit state tracking.
+
+**Architecture**: MLP-based state transitions with residual connections:
+```
+h_t = MLP(h_{t-1}) + Linear(x_t)
+y_t = MLP(h_t) + Linear(x_t)
+```
 
 **API**:
-- `forward(x, hidden_state)` returns a tuple: `(output, next_hidden_state)`.
-- `init_hidden(batch_size)` provides the initial hidden state.
+- `forward(x, hidden_state)` returns tuple: `(output, next_hidden_state)`
+- `init_hidden(batch_size)` provides initial hidden state
 
 Constructor Arguments:
 - `state_dim` (int): Internal state dimension
 - `input_dim` (int): Input feature dimension
 - `output_dim` (int): Output feature dimension
-- `hidden_dim` (int): Hidden layer dimension within networks
+- `hidden_dim` (int): Hidden layer dimension within MLPs
 - `device` (str or torch.device)
 
 Example usage:
@@ -220,9 +231,9 @@ print(next_hidden.shape)  # torch.Size([4, 128])
 The `MetaMAML` class in `meta_rl/meta_maml.py` implements MAML.
 
 **Key Features**:
-- Handles **stateful models** (like SSM)
+- Handles **stateful models** (with explicit state passing)
 - Supports **time series input** `(B, T, D)`
-- **API**: `meta_update` takes `tasks` (a list of tuples) and `initial_hidden_state` as arguments
+- **API**: `meta_update` takes `tasks` (list of tuples) and `initial_hidden_state`
 
 **Time Series Input Handling**:
 Input data should be shaped `(batch_size, time_steps, features)`. MAML processes sequences internally.
@@ -244,7 +255,7 @@ support_y = torch.randn(4, 10, 16)
 query_x = torch.randn(4, 10, 32)
 query_y = torch.randn(4, 10, 16)
 
-# Prepare tasks as a list of tuples
+# Prepare tasks as list of tuples
 tasks = []
 for i in range(4):
     tasks.append((support_x[i:i+1], support_y[i:i+1], query_x[i:i+1], query_y[i:i+1]))
@@ -258,26 +269,25 @@ print(f"Meta Loss: {loss:.4f}")
 ```
 
 Constructor Arguments:
-- `model`: The base model.
-- `inner_lr` (float): Inner loop learning rate.
-- `outer_lr` (float): Outer loop learning rate.
-- `first_order` (bool): Use first-order MAML.
+- `model`: The base model
+- `inner_lr` (float): Inner loop learning rate
+- `outer_lr` (float): Outer loop learning rate
+- `first_order` (bool): Use first-order MAML
 
 ### Adapter (Test-Time Adaptation)
 
 The `Adapter` class in `adaptation/test_time_adaptation.py` performs test-time adaptation.
 
 **Key Features**:
-- **API**: `update_step` takes `x`, `y` (target), and `hidden_state` directly as arguments
+- **API**: `update_step` takes `x`, `y` (target), and `hidden_state`
 - Internally performs `config.num_steps` gradient updates per call
-- Properly detaches hidden state to prevent autograd computational graph errors
-- Manages hidden state across internal steps
+- Properly detaches hidden state to prevent autograd errors
 - Returns `(loss, steps_taken)`
 
 Constructor Arguments:
-- `model`: The model to adapt.
-- `config`: An `AdaptationConfig` object containing `learning_rate` and `num_steps`.
-- `device`: Device string ('cpu' or 'cuda').
+- `model`: The model to adapt
+- `config`: An `AdaptationConfig` object with `learning_rate` and `num_steps`
+- `device`: Device string ('cpu' or 'cuda')
 
 Example usage:
 
@@ -286,7 +296,6 @@ import torch
 from adaptation.test_time_adaptation import Adapter, AdaptationConfig
 from core.ssm import StateSpaceModel
 
-# Model output dim must match target 'y'
 model = StateSpaceModel(state_dim=64, input_dim=32, output_dim=32, device='cpu')
 config = AdaptationConfig(learning_rate=0.01, num_steps=5)
 adapter = Adapter(model=model, config=config, device='cpu')
@@ -299,50 +308,21 @@ for step in range(10):
     x = torch.randn(1, 32)
     y_target = torch.randn(1, 32)
     
-    # Store current state for adaptation call
-    current_hidden_state_for_adapt = hidden_state
+    # Store current state
+    current_hidden_state = hidden_state
     
-    # Get next state prediction (optional)
+    # Get next state prediction
     with torch.no_grad():
-        output, hidden_state = model(x, current_hidden_state_for_adapt)
+        output, hidden_state = model(x, current_hidden_state)
     
-    # Call update_step with x, target, and state_t
+    # Adapt model
     loss, steps_taken = adapter.update_step(
         x=x,
         y=y_target,
-        hidden_state=current_hidden_state_for_adapt
+        hidden_state=current_hidden_state
     )
-    print(f"Adapt Call {step}, Loss: {loss:.4f}, Internal Steps: {steps_taken}")
+    print(f"Step {step}, Loss: {loss:.4f}")
 ```
-
-### Environment Runner
-
-The `Environment` class in `env_runner/environment.py` provides a wrapper around Gymnasium environments.
-
-**Key Features**:
-- Simplified API: `reset()` returns only observation (not tuple)
-- Simplified API: `step(action)` returns 4 values (obs, reward, done, info)
-- Batch processing support with `batch_size` parameter
-
-## Main Script (`main.py`)
-
-Demonstrates the complete workflow using the updated APIs.
-
-- Collects data and returns it as a dictionary of tensors
-- Calls `MetaMAML.meta_update` with `tasks` list and `initial_hidden_state`
-- Calls `Adapter.update_step` with `x`, `y` (target), and the correct `hidden_state`
-- Sets SSM `output_dim` to match the target dimension
-
-## Experiments
-
-### Quick Benchmark (`experiments/quick_benchmark.py`)
-
-Runs a quick benchmark across multiple configurations to verify the framework's functionality.
-
-**Features**:
-- Tests multiple environments (CartPole, Pendulum)
-- Measures adaptation effectiveness
-- Reports loss reduction percentages
 
 ## Docker Usage
 
@@ -368,80 +348,40 @@ docker build -t ssm-metarl .
 
 ```bash
 # Run main script
-docker run --rm ghcr.io/sunghunkwag/ssm-metarl-testcompute:latest python main.py --env_name Pendulum-v1 --num_epochs 10
-
-# Run benchmark
-docker run --rm ghcr.io/sunghunkwag/ssm-metarl-testcompute:latest python experiments/quick_benchmark.py
+docker run --rm ghcr.io/sunghunkwag/ssm-metarl-testcompute:latest python main.py --env_name Pendulum-v1
 
 # Run tests
 docker run --rm ghcr.io/sunghunkwag/ssm-metarl-testcompute:latest pytest
 ```
 
-## Recent Updates (v1.3.0)
+## Recent Updates (v1.3.1)
 
-### Demo Notebook Fixes (Latest)
+### Honesty Update (Latest)
 
-1. **MetaMAML API Correction** (Commit: TBD)
-   - **Fixed**: Corrected `meta_update()` to use `tasks` list and `initial_hidden_state`
-   - **Problem**: Demo was using non-existent `support_data`/`query_data` parameters
-   - **Solution**: Updated to match actual API: `meta_update(tasks, initial_hidden_state, loss_fn)`
-   - **Impact**: Demo now runs without errors in Colab
+1. **README Clarification** (Commit: TBD)
+   - **Added**: ⚠️ Important Clarification section
+   - **Clarified**: This is neural network based, NOT structured SSM
+   - **Updated**: Complexity claims to be accurate (O(T·d²))
+   - **Explained**: What we have vs what we don't have
+   - **Impact**: Honest representation of the framework
 
-2. **Adapter API Correction** (Commit: TBD)
-   - **Fixed**: Replaced non-existent `adapt()` method with `update_step()`
-   - **Problem**: Demo was calling `adapter.adapt(observations, targets)`
-   - **Solution**: Use `update_step(x, y, hidden_state)` in a loop
-   - **Impact**: Proper adaptation with loss tracking
+### Demo Notebook Fixes (v1.3.0)
 
-3. **Data Shape Fixes** (Commit: TBD)
-   - **Fixed**: Proper 3D tensor reshaping for time series (batch, time, features)
-   - **Problem**: Data was passed as 2D tensors
-   - **Solution**: Added `.unsqueeze(0)` to create batch dimension
-   - **Impact**: MetaMAML can now process sequences correctly
+1. **MetaMAML API Correction**
+   - Fixed: Corrected `meta_update()` to use `tasks` list and `initial_hidden_state`
+   - Impact: Demo now runs without errors in Colab
 
-4. **Hidden State Management** (Commit: TBD)
-   - **Fixed**: Added proper hidden state initialization and propagation
-   - **Problem**: Stateful model wasn't receiving required hidden_state
-   - **Solution**: Initialize with `model.init_hidden()` and pass through all operations
-   - **Impact**: SSM model works correctly with sequential data
+2. **Adapter API Correction**
+   - Fixed: Replaced non-existent `adapt()` with `update_step()`
+   - Impact: Proper adaptation with loss tracking
 
-### Previous Updates (v1.2.0)
+3. **Data Shape Fixes**
+   - Fixed: Proper 3D tensor reshaping (batch, time, features)
+   - Impact: MetaMAML processes sequences correctly
 
-1. **PyTorch Autograd Error Fix** (Commit: e084cf6)
-   - **Fixed**: Added `hidden_state.detach()` in adaptation loop
-   - **Problem**: Computational graph was being reused across gradient steps
-   - **Solution**: Detach hidden state to prevent autograd errors
-   - **Impact**: All tests now pass, adaptation works correctly
-
-2. **Environment API Compatibility** (Commit: acbd1cf)
-   - Fixed `env.reset()` to match Environment wrapper return values
-   - Fixed `env.step()` to handle 4 return values instead of 5
-   - Updated in 4 locations across `main.py`
-
-3. **Action Space Handling** (Commit: acbd1cf)
-   - Added dimension slicing for discrete action spaces
-   - Prevents errors when model output_dim > action_space.n
-   - Ensures valid action sampling
-
-4. **Import Fixes** (Commit: acbd1cf)
-   - Fixed incorrect import in `experiments/quick_benchmark.py`
-   - Changed `import nn_functional as F` to `import torch.nn.functional as F`
-
-### Test Results After All Fixes
-
-All components work correctly:
-- ✅ `main.py` works with CartPole-v1 and Pendulum-v1
-- ✅ `experiments/quick_benchmark.py` runs without errors
-- ✅ All unit tests pass (100% success rate)
-- ✅ CI/CD pipeline passes on Python 3.8, 3.9, 3.10, 3.11
-- ✅ Docker container builds and runs successfully
-
-### Container Deployment
-
-- **Automated builds** on every commit to main branch
-- **Multi-stage Docker build** for optimized image size
-- **Available on GitHub Container Registry**: `ghcr.io/sunghunkwag/ssm-metarl-testcompute`
-- **Tags**: `latest`, `main`, `sha-<commit>`
+4. **Hidden State Management**
+   - Fixed: Proper initialization and propagation
+   - Impact: State tracking works correctly
 
 ## Requirements
 
@@ -461,8 +401,8 @@ If you use this framework in your research, please cite:
 
 ```bibtex
 @software{ssm_metarl_testcompute,
-  author = {sunghunkwag},
-  title = {SSM-MetaRL-TestCompute: A Framework for Meta-RL with State Space Models},
+  author = {Sung Hun Kwag},
+  title = {SSM-MetaRL-TestCompute: A Framework for Meta-RL with Neural State Modeling},
   year = {2025},
   url = {https://github.com/sunghunkwag/SSM-MetaRL-TestCompute}
 }
@@ -471,7 +411,7 @@ If you use this framework in your research, please cite:
 ## Acknowledgments
 
 This framework builds upon research in:
-- State Space Models for sequence modeling
+- State Space Models (conceptual inspiration)
 - Model-Agnostic Meta-Learning (MAML)
 - Test-time adaptation techniques
 - Reinforcement learning with Gymnasium
