@@ -43,18 +43,13 @@ class SSM(nn.Module):
         self.output_dim = output_dim
         self.device = device
 
-        # Diagonal continuous-time dynamics A = diag(a), complex-valued.
-        # Initialize with stable real parts (negative) and small imaginary parts.
-        a_real = -0.5 * torch.ones(state_dim)
-        a_imag = 0.1 * torch.randn(state_dim)
-        self.a_real = nn.Parameter(a_real)
-        self.a_imag = nn.Parameter(a_imag)
+        # Diagonal continuous-time dynamics A = diag(a), real-valued and stable.
+        a = -0.5 * torch.ones(state_dim)
+        self.a = nn.Parameter(a)
 
-        # Input and output projections in complex space.
-        self.B_real = nn.Parameter(0.1 * torch.randn(state_dim, input_dim))
-        self.B_imag = nn.Parameter(0.1 * torch.randn(state_dim, input_dim))
-        self.C_real = nn.Parameter(0.1 * torch.randn(output_dim, state_dim))
-        self.C_imag = nn.Parameter(0.1 * torch.randn(output_dim, state_dim))
+        # Input and output projections in real space.
+        self.B = nn.Parameter(0.1 * torch.randn(state_dim, input_dim))
+        self.C = nn.Parameter(0.1 * torch.randn(output_dim, state_dim))
 
         # Real feedthrough term D.
         self.D = nn.Linear(input_dim, output_dim)
@@ -64,41 +59,33 @@ class SSM(nn.Module):
 
         self.to(device)
 
-    def _complex_params(self) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        a = torch.complex(self.a_real, self.a_imag)
-        b = torch.complex(self.B_real, self.B_imag)
-        c = torch.complex(self.C_real, self.C_imag)
-        return a, b, c
-
     def _discretize(self) -> Tuple[torch.Tensor, torch.Tensor]:
         """Compute discrete-time (Ā, B̄) with bilinear/Tustin method.
 
         This keeps the computation in PyTorch for autograd compatibility,
         ensuring higher-order gradients can flow through Δ and A.
         """
-        a, b, _ = self._complex_params()
         dt = torch.nn.functional.softplus(self.log_dt)
 
         # Diagonal A -> elementwise discretization.
-        denom = 1.0 - 0.5 * dt * a
-        a_bar = (1.0 + 0.5 * dt * a) / denom
-        b_bar = (dt[:, None] * b) / denom[:, None]
+        denom = 1.0 - 0.5 * dt * self.a
+        a_bar = (1.0 + 0.5 * dt * self.a) / denom
+        b_bar = (dt[:, None] * self.B) / denom[:, None]
         return a_bar, b_bar
 
     def init_hidden(self, batch_size: int = 1) -> torch.Tensor:
-        """Initialize the hidden state to zeros (complex).
+        """Initialize the hidden state to zeros.
 
         Args:
             batch_size: Number of sequences in batch
 
         Returns:
-            Zero tensor of shape (batch_size, state_dim) with complex dtype.
+            Zero tensor of shape (batch_size, state_dim).
         """
         return torch.zeros(
             batch_size,
             self.state_dim,
             device=self.device,
-            dtype=torch.complex64,
         )
 
     def forward(
@@ -108,25 +95,19 @@ class SSM(nn.Module):
 
         Args:
             x: Input tensor of shape (batch_size, input_dim)
-            hidden_state: Current hidden state (batch_size, state_dim), complex
+            hidden_state: Current hidden state (batch_size, state_dim)
 
         Returns:
             output: Real-valued output tensor (batch_size, output_dim)
-            next_hidden_state: Updated complex state (batch_size, state_dim)
+            next_hidden_state: Updated state (batch_size, state_dim)
         """
-        if not torch.is_complex(hidden_state):
-            hidden_state = torch.complex(hidden_state, torch.zeros_like(hidden_state))
-
         a_bar, b_bar = self._discretize()
-        _, _, c = self._complex_params()
 
         # Explicit recurrence for RL inference.
-        x_complex = torch.complex(x, torch.zeros_like(x))
-        next_hidden_state = hidden_state * a_bar + x_complex @ b_bar.T
+        next_hidden_state = hidden_state * a_bar + x @ b_bar.T
 
-        # Output: take real projection to ensure real-valued outputs.
-        y_complex = next_hidden_state @ c.T
-        y_real = y_complex.real + self.D(x)
+        # Output projection stays real-valued for autograd compatibility.
+        y_real = next_hidden_state @ self.C.T + self.D(x)
 
         return y_real, next_hidden_state
 
