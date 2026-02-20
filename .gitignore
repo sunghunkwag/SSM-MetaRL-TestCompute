@@ -2,7 +2,7 @@ __pycache__/
 *.pyc
 *.pyo
 *.egg-info/
-results/
+results/*.pt
 figures/
 .pytest_cache/
 .coverage
