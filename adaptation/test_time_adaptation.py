@@ -36,7 +36,8 @@ class Adapter:
     def __init__(self,
                  model: nn.Module,
                  config: AdaptationConfig,
-                 device: str = 'cpu'):
+                 device: str = 'cpu',
+                 params_to_adapt: Optional[list] = None):
         
         if torch is None:
             raise RuntimeError("PyTorch is required for test-time adaptation")
@@ -45,13 +46,14 @@ class Adapter:
         self.config = config
         self.device = device
         
-        # To match the API calls in main.py and tests/test_adaptation.py,
-        # we embed the optimizer and loss function.
+        # If specific params are provided, use them. 
+        # Otherwise, use all model parameters.
+        params = params_to_adapt if params_to_adapt is not None else self.model.parameters()
+        
         self.optimizer = torch.optim.Adam(
-            self.model.parameters(), 
+            params, 
             lr=self.config.learning_rate
         )
-        # The loss function (e.g., MSE) is used to compare output and target (y)
         self.loss_fn = nn.MSELoss()
 
     def update_step(self,
@@ -60,51 +62,30 @@ class Adapter:
                     hidden_state: torch.Tensor
                     ) -> Tuple[float, int]:
         """
-        Performs adaptation update steps based on the API call from main.py.
-        This function NOW correctly updates the hidden state internally
-        across 'num_steps' iterations.
-        
-        Args:
-            x: Input tensor (batch_size, input_dim)
-            y: Target tensor (batch_size, output_dim) (e.g., next_observation)
-            hidden_state: Current hidden state (batch_size, state_dim)
-            
-        Returns:
-            Tuple[float, int]:
-                - loss (float): The loss value from the final adaptation step.
-                - steps (int): The number of steps taken.
+        Performs adaptation update steps.
         """
-        
-        # Set the model to training mode for adaptation
         self.model.train()
-        
         current_loss = 0.0
         
-        # Loop for the number of steps defined in the config.
-        # This fixes the "duplicate learning" problem by unrolling the state.
         for step in range(self.config.num_steps):
-            
-            # 1. Zero gradients
             self.optimizer.zero_grad()
-            
-            # 2. Forward pass (Call the SSM model)
-            #    Use the current hidden_state to get the next state.
             output, next_hidden_state = self.model(x, hidden_state)
-            
-            # 3. Calculate loss (comparing model output to target 'y')
             loss = self.loss_fn(output, y)
-            
-            # 4. Backpropagation
             loss.backward()
             
-            # 5. Optimizer step
+            # Gradient clipping
+            if self.config.grad_clip_norm is not None:
+                # Get parameters currently being optimized
+                params_to_clip = []
+                for group in self.optimizer.param_groups:
+                    params_to_clip.extend(group['params'])
+                torch.nn.utils.clip_grad_norm_(params_to_clip, self.config.grad_clip_norm)
+            
             self.optimizer.step()
-            
-            # 6. ★CRITICAL★: Update the hidden_state for the next iteration.
-            #    .detach() is used to stop gradients from flowing back in time.
-            hidden_state = next_hidden_state.detach()
-            
+            hidden_state = next_hidden_state.detach() if next_hidden_state is not None else None
             current_loss = loss.item()
+
+        return current_loss, self.config.num_steps
 
         # main.py 
         # expects a (loss, steps) tuple as a return value.

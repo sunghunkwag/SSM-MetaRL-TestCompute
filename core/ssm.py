@@ -164,6 +164,14 @@ class SSM(nn.Module):
         Complexity:
             O(d²) due to Linear layers in MLPs, where d ~ hidden_dim
         """
+        if x.dim() == 3:  # (batch, seq_len, input_dim)
+            outputs = []
+            for t in range(x.shape[1]):
+                out, hidden_state = self.forward(x[:, t, :], hidden_state)
+                outputs.append(out)
+            return torch.stack(outputs, dim=1), hidden_state
+
+        # Single-step forward:
         # State transition: h_t = MLP(h_{t-1}) + Linear(x_t)
         state_update = self.state_transition(hidden_state)
         input_update = self.input_projection(x)

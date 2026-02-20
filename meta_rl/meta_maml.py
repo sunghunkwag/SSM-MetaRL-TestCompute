@@ -58,8 +58,7 @@ class MetaMAML:
         model_to_call = self.model
         args = (x,)
         if self._stateful:
-            if hidden_state is None:
-                raise ValueError("hidden_state must be provided for stateful models.")
+            # Pass hidden_state through even if None (e.g., MambaSSM manages state internally)
             args = (x, hidden_state)
 
         if params is None:
@@ -86,7 +85,8 @@ class MetaMAML:
             fast_weights: Adapted parameters as OrderedDict
         """
         if self._stateful and initial_hidden_state is None:
-             raise ValueError("initial_hidden_state must be provided for stateful models.")
+             # Models like MambaSSM manage state internally.
+             pass
 
         if loss_fn is None:
             loss_fn = F.mse_loss
@@ -107,6 +107,12 @@ class MetaMAML:
                 outputs = []
                 for t in range(T):
                     x_t = support_x[:, t, :]
+                    
+                    # Fix batch size mismatch: expand hidden state if needed
+                    if hidden_state is not None and hidden_state.shape[0] == 1 and x_t.shape[0] > 1:
+                        target_shape = [x_t.shape[0]] + list(hidden_state.shape[1:])
+                        hidden_state = hidden_state.expand(*target_shape)
+                    
                     output_t, hidden_state = self.functional_forward(x_t, hidden_state, fast_weights)
                     outputs.append(output_t)
                 # Stack outputs along time dimension: (Batch, Time, OutputDim)
@@ -145,7 +151,9 @@ class MetaMAML:
             Average meta-loss across tasks
         """
         if self._stateful and initial_hidden_state is None:
-             raise ValueError("initial_hidden_state must be provided for stateful models.")
+             # Models like MambaSSM accept hidden_state for API compat
+             # but manage state internally (init_hidden returns None).
+             pass
 
         if loss_fn is None:
             loss_fn = F.mse_loss
@@ -167,6 +175,12 @@ class MetaMAML:
                  outputs = []
                  for t in range(T):
                      x_t = query_x[:, t, :]
+                     
+                     # Fix batch size mismatch: expand hidden state if needed
+                     if hidden_state is not None and hidden_state.shape[0] == 1 and x_t.shape[0] > 1:
+                         target_shape = [x_t.shape[0]] + list(hidden_state.shape[1:])
+                         hidden_state = hidden_state.expand(*target_shape)
+                         
                      output_t, hidden_state = self.functional_forward(x_t, hidden_state, fast_weights)
                      outputs.append(output_t)
                  pred = torch.stack(outputs, dim=1)
