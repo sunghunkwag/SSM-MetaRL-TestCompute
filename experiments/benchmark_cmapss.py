@@ -86,7 +86,7 @@ INFORMATIVE_SENSORS = [
 MAX_RUL = 125
 
 # Reduced mode for pipeline validation
-REDUCED_MODE = True
+REDUCED_MODE = False
 
 
 def download_cmapss(data_dir: Path) -> Dict[str, Path]:
@@ -520,7 +520,7 @@ def main():
     print()
 
     # Run benchmarks
-    num_epochs = 5 if REDUCED_MODE else 30
+    num_epochs = 5 if REDUCED_MODE else 100
     if REDUCED_MODE:
         print(f"!!! REDUCED MODE ENABLED: Running {num_epochs} epochs for validation !!!")
         
