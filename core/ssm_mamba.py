@@ -338,14 +338,8 @@ class MambaSSM(nn.Module):
             batch_size: Number of sequences in batch
 
         Returns:
-            Zero tensor of shape (batch_size, d_inner, state_dim)
-            if using the fallback.
+            None (Mamba manages state internally via selective scan).
         """
-        if not self._using_official_mamba:
-            d_inner = int(self.expand * self.d_model)
-            return torch.zeros(
-                batch_size, d_inner, self.state_dim, device=self.device
-            )
         return None
 
     def forward(
