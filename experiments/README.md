@@ -2,7 +2,7 @@
 
 This directory contains a comprehensive benchmark suite that goes **beyond toy problems** to prove the effectiveness of the SSM-MetaRL framework on high-dimensional, complex tasks.
 
-## 🎯 Motivation
+## Motivation
 
 The original benchmarks (CartPole-v1, Pendulum-v1) are **toy problems**:
 - Low dimensional (4-8 state dimensions)
@@ -11,15 +11,15 @@ The original benchmarks (CartPole-v1, Pendulum-v1) are **toy problems**:
 - No scaling validation
 
 This benchmark suite addresses these limitations with:
-- ✅ **High-dimensional tasks**: Up to 376-dim state spaces (Humanoid)
-- ✅ **Complex dynamics**: MuJoCo physics simulation
-- ✅ **SOTA baselines**: LSTM, GRU, Transformer, MLP comparisons
-- ✅ **Meta-learning protocols**: Task distributions for true meta-RL evaluation
-- ✅ **Proper metrics**: Sample efficiency, adaptation speed, generalization
+- **High-dimensional tasks**: Up to 376-dim state spaces (Humanoid)
+- **Complex dynamics**: MuJoCo physics simulation
+- **SOTA baselines**: LSTM, GRU, Transformer, MLP comparisons
+- **Meta-learning protocols**: Task distributions for true meta-RL evaluation
+- **Proper metrics**: Sample efficiency, adaptation speed, generalization
 
 ---
 
-## 📁 Files
+## Repository Structure
 
 ### Core Modules
 
@@ -57,7 +57,7 @@ This benchmark suite addresses these limitations with:
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
 
 ### 1. Install Dependencies
 
@@ -86,7 +86,7 @@ python experiments/visualize_results.py --results-dir results --output-dir figur
 
 ---
 
-## 📊 Available Task Distributions
+## Available Task Distributions
 
 | Task Distribution | Base Environment | State Dim | Action Dim | Variation |
 |-------------------|------------------|-----------|------------|-----------|
@@ -99,7 +99,7 @@ python experiments/visualize_results.py --results-dir results --output-dir figur
 
 ---
 
-## 🔬 Baseline Methods
+## Baseline Methods
 
 | Method | Description | Parameters | Complexity |
 |--------|-------------|------------|------------|
@@ -113,7 +113,7 @@ python experiments/visualize_results.py --results-dir results --output-dir figur
 
 ---
 
-## 📈 Evaluation Metrics
+## Evaluation Metrics
 
 ### Primary Metrics
 
@@ -146,7 +146,7 @@ python experiments/visualize_results.py --results-dir results --output-dir figur
 
 ---
 
-## 🎯 Expected Outcomes
+## Expected Outcomes
 
 ### Hypothesis 1: SSM > LSTM
 **Claim**: SSM-MetaRL should outperform LSTM-MAML due to:
@@ -168,7 +168,7 @@ python experiments/visualize_results.py --results-dir results --output-dir figur
 
 ---
 
-## 📝 Example Usage
+## Example Usage
 
 ### Run Complete Benchmark Suite
 
@@ -221,7 +221,7 @@ task = dist.sample_task(0)
 
 ---
 
-## 🔍 Results Interpretation
+## Results Interpretation
 
 ### Training Loss
 - **Decreasing**: Model is learning to predict next states
@@ -240,7 +240,7 @@ task = dist.sample_task(0)
 
 ---
 
-## 🐛 Troubleshooting
+## Troubleshooting
 
 ### MuJoCo Installation Issues
 
@@ -274,7 +274,7 @@ python experiments/serious_benchmark.py \
 
 ---
 
-## 📚 References
+## References
 
 1. **MAML**: Finn et al., "Model-Agnostic Meta-Learning for Fast Adaptation of Deep Networks", ICML 2017
 2. **PEARL**: Rakelly et al., "Efficient Off-Policy Meta-Reinforcement Learning via Probabilistic Context Variables", ICML 2019
@@ -284,7 +284,7 @@ python experiments/serious_benchmark.py \
 
 ---
 
-## 🤝 Contributing
+## Contributing
 
 To add a new task distribution:
 
@@ -301,13 +301,13 @@ To add a new baseline:
 
 ---
 
-## 📄 License
+## License
 
 MIT License - See main repository LICENSE file
 
 ---
 
-## 🙏 Acknowledgments
+## Acknowledgments
 
 This benchmark suite builds upon:
 - Gymnasium/MuJoCo for physics simulation
