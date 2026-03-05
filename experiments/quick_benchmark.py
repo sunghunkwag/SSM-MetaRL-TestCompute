@@ -9,6 +9,10 @@ import torch.nn as nn
 from collections import OrderedDict
 import torch.nn.functional as F
 
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 from core.ssm import StateSpaceModel
 from meta_rl.meta_maml import MetaMAML
 from adaptation.test_time_adaptation import Adapter, AdaptationConfig

@@ -11,8 +11,11 @@ import argparse
 import json
 import matplotlib.pyplot as plt
 import numpy as np
+import sys
 from pathlib import Path
 from typing import Dict, List
+
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 
 def load_results(results_dir: str) -> Dict[str, Dict]:
